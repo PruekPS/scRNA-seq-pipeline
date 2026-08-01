@@ -323,7 +323,7 @@
     <ul>
       <li><strong>Input flexibility:</strong> Illumina short-read is the default target; the architecture keeps the sequencer-specific step isolated so a PacBio long-read run (full-length transcript capture) can be substituted without touching QC or downstream code.</li>
       <li><strong>Assay scope, phase 1:</strong> whole-transcriptome (gene expression) libraries only. Evercode TCR libraries share the same demultiplexing step but need a separate V(D)J/clonotype module — scoped as a follow-on once the GEX path is validated (see the TCR+GEX joint-modeling reference in Next Steps).</li>
-      <li><strong>Compute:</strong> HiPerGator (UF Research Computing), everything scoped to <code class="data">/blue/esayour/puttawatsuphapru/</code> — no shared or system-wide paths — sized to the smallest SLURM allocation that finishes each step in reasonable time, no standing GPU reservations.</li>
+      <li><strong>Compute:</strong> HiPerGator (UF Research Computing), everything scoped to a dedicated group/user project path — no shared or system-wide paths — sized to the smallest SLURM allocation that finishes each step in reasonable time, no standing GPU reservations.</li>
     </ul>
   </section>
 
@@ -620,7 +620,7 @@
       </div>
       <div class="infra-card">
         <p class="k"><span class="dot ok"></span>HiPerGator (HPC)</p>
-        <p class="v">Connected via OnDemand and reachable over SSH (<code>ssh hipergator</code> → <code>hpg.rc.ufl.edu</code>, user <code>puttawatsuphapru</code>). All pipeline I/O scoped to <code class="data">/blue/esayour/puttawatsuphapru/</code> — never shared or system-wide paths. Note: any terminal session (including this agent's) still needs your interactive GatorLink/Duo login each time — that step stays yours by design.</p>
+        <p class="v">Connected via HiPerGator OnDemand and reachable over SSH. All pipeline I/O scoped to a dedicated group/user project path — never shared or system-wide paths (real path kept in a local, untracked notes file, not published here). Note: any terminal session (including this agent's) still needs an interactive GatorLink/Duo login each time — that step stays yours by design.</p>
       </div>
       <div class="infra-card">
         <p class="k"><span class="dot ok"></span>Repository</p>

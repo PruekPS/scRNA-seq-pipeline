@@ -1,13 +1,13 @@
 #!/bin/bash
 #SBATCH --job-name=split-pipe-demux
-#SBATCH --account=esayour   # TODO: verify — inferred from /blue/esayour/ path; confirm with `sacctmgr show assoc user=$USER format=account,qos`
-#SBATCH --qos=esayour       # TODO: verify — HiPerGator QoS is often <group> or <group>-b (burst); check the command above
+#SBATCH --account=<GROUP>   # TODO: set to your HiPerGator group; confirm with `sacctmgr show assoc user=$USER format=account,qos`
+#SBATCH --qos=<GROUP>       # TODO: set to your HiPerGator QoS — often <group> or <group>-b (burst); check the command above
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48gb
 #SBATCH --time=08:00:00
-#SBATCH --output=/blue/esayour/puttawatsuphapru/logs/split-pipe-%j.out
+#SBATCH --output=<PROJECT_ROOT>/logs/split-pipe-%j.out   # TODO: set to your /blue/<group>/<user> path
 #SBATCH --mail-type=END,FAIL
 #
 # Modest, non-GPU allocation — split-pipe's alignment/quantification step is
@@ -18,7 +18,7 @@
 
 set -euo pipefail
 
-PROJECT_ROOT="/blue/esayour/puttawatsuphapru"
+PROJECT_ROOT="<PROJECT_ROOT>"   # TODO: set to your /blue/<group>/<user> path (matches --output above)
 ENV_NAME="splitpipe"
 
 FASTQ_DIR="${PROJECT_ROOT}/raw/<RUN_NAME>"          # TODO: set input FASTQ path

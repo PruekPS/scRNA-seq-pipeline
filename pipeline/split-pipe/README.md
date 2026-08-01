@@ -26,34 +26,36 @@ Parse account credentials. To obtain it:
    version from the download portal itself, since Parse does not publish a
    public changelog.
 3. Download the tarball to your own machine or directly to HiPerGator (e.g.
-   via the [OnDemand file
-   browser](https://ondemand.rc.ufl.edu/pun/sys/dashboard/files/fs//blue/esayour/puttawatsuphapru/))
-   into `/blue/esayour/puttawatsuphapru/software/split-pipe/`.
+   via UF Research Computing's OnDemand file browser) into your project's
+   `software/split-pipe/` directory under your HiPerGator group/user storage
+   path (`/blue/<group>/<user>/` — see your own local notes for the actual
+   value; not published in this repo).
 
 ## Install on HiPerGator
 
-Everything below stays under `/blue/esayour/puttawatsuphapru/` — no
+Everything below stays under your HiPerGator group/user project root — no
 system-wide installs, no shared/other-user paths.
 
 ```bash
-ssh hipergator
-cd /blue/esayour/puttawatsuphapru
+ssh <your-hipergator-alias>
+cd /blue/<group>/<user>
 bash scRNA-pipeline/pipeline/split-pipe/install_hipergator.sh \
-     /blue/esayour/puttawatsuphapru/software/split-pipe/ParseBiosciences-Pipeline.<version>.zip
+     /blue/<group>/<user>/software/split-pipe/ParseBiosciences-Pipeline.<version>.zip
 ```
 
 See [`install_hipergator.sh`](install_hipergator.sh) — it creates a dedicated
 mamba env, unzips the pipeline, and pip-installs it exactly as Parse's own
-install script does, all scoped to your `/blue` directory.
+install script does, all scoped to your project root (set via the
+`SPLITPIPE_PROJECT_ROOT` environment variable — see the script).
 
 ## Running it
 
 [`run_split_pipe_template.slurm`](run_split_pipe_template.slurm) is a SLURM
 batch template: modest CPU/RAM allocation (no GPU — this step doesn't use
 one), reads raw FASTQ from a `raw/` input path and writes to an `out/` path,
-both meant to sit under your `/blue/esayour/puttawatsuphapru/` project space.
-Fill in the placeholders (kit chemistry, sample names, genome reference)
-before submitting with `sbatch`.
+both meant to sit under your HiPerGator group/user project space.
+Fill in the placeholders (account, QoS, paths, kit chemistry, sample names,
+genome reference) before submitting with `sbatch`.
 
 ## Generating input FASTQ from a raw Illumina run (bcl2fastq)
 

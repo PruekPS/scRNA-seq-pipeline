@@ -31,3 +31,6 @@ renv/library/
 
 # OS cruft
 .DS_Store
+
+# Personal/account-specific notes — never published
+NOTES.local.md

@@ -1,12 +1,12 @@
 #!/bin/bash
 # Install Parse Biosciences split-pipe into a dedicated mamba env,
-# entirely under /blue/esayour/puttawatsuphapru/. Run this ON HiPerGator
-# (ssh hipergator), not on your laptop.
+# entirely under your HiPerGator group/user project root. Run this ON
+# HiPerGator (ssh into your cluster alias), not on your laptop.
 #
-# Usage: bash install_hipergator.sh /path/to/ParseBiosciences-Pipeline.<version>.zip
+# Usage: SPLITPIPE_PROJECT_ROOT=/blue/<group>/<user> bash install_hipergator.sh /path/to/ParseBiosciences-Pipeline.<version>.zip
 set -euo pipefail
 
-PROJECT_ROOT="/blue/esayour/puttawatsuphapru"
+PROJECT_ROOT="${SPLITPIPE_PROJECT_ROOT:?Set SPLITPIPE_PROJECT_ROOT to your /blue/<group>/<user> path}"
 SOFTWARE_DIR="${PROJECT_ROOT}/software/split-pipe"
 ENV_NAME="splitpipe"
 
