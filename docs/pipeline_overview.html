@@ -301,8 +301,8 @@
       <span class="pill">Scope: whole transcriptome (GEX) first</span>
       <span class="pill">Repo: dedicated, this folder</span>
       <span class="pill">HPC: reachable via HiPerGator OnDemand + SSH</span>
-      <span class="pill pending">Env: scrna created, packages not yet installed</span>
-      <span class="pill pending">GitHub: portfolio push pending repo details</span>
+      <span class="pill">Env: scrna populated (scanpy 1.11 + Seurat 5.5)</span>
+      <span class="pill">GitHub: pushed to github.com/PruekPS/scRNA-seq-pipeline</span>
     </div>
     <nav class="toc">
       <a href="#scope">Scope</a>
@@ -499,7 +499,7 @@
         <text x="410" y="710" class="lane-label" text-anchor="middle">R (Seurat) — downstream biology</text>
         <g class="node-box"><rect x="230" y="722" width="360" height="60" rx="8"/>
           <text x="410" y="748" class="node-title" text-anchor="middle">Normalization + HVG selection</text>
-          <text x="410" y="766" class="node-sub" text-anchor="middle">handoff via anndata2ri / .h5ad ↔ .rds</text>
+          <text x="410" y="766" class="node-sub" text-anchor="middle">handoff via zellkonverter: h5ad → SCE → Seurat</text>
         </g>
 
         <path d="M410,782 L410,810" class="flow-line" marker-end="url(#arrow)"/>
@@ -616,7 +616,7 @@
     <div class="infra-grid">
       <div class="infra-card">
         <p class="k"><span class="dot ok"></span>Local environment</p>
-        <p class="v">Miniforge/mamba 2.5.0 installed. <code>scrna</code> env exists but is empty — packages install once the stack above is confirmed.</p>
+        <p class="v">Miniforge/mamba 2.5.0. <code>scrna</code> env populated: scanpy 1.11.5, anndata, leidenalg, umap-learn, scrublet on the Python side; Seurat 5.5.1, harmony, zellkonverter (h5ad&#8596;SingleCellExperiment bridge) on the R side. No scVI/GPU packages yet — added only if batch integration actually needs them.</p>
       </div>
       <div class="infra-card">
         <p class="k"><span class="dot ok"></span>HiPerGator (HPC)</p>
@@ -627,8 +627,8 @@
         <p class="v">Dedicated git repo initialized in this <code>scRNA sequencing</code> folder, separate from the parent repo and from the future Akoya spatial project.</p>
       </div>
       <div class="infra-card">
-        <p class="k"><span class="dot pending"></span>GitHub portfolio</p>
-        <p class="v">Local repo ready to push to <a href="https://github.com/PruekPS" target="_blank" rel="noopener">github.com/PruekPS</a>. A dedicated deploy key was generated locally — pending you adding it to your GitHub account and confirming the repo name/visibility.</p>
+        <p class="k"><span class="dot ok"></span>GitHub portfolio</p>
+        <p class="v">Pushed and public: <a href="https://github.com/PruekPS/scRNA-seq-pipeline" target="_blank" rel="noopener">github.com/PruekPS/scRNA-seq-pipeline</a>.</p>
       </div>
       <div class="infra-card">
         <p class="k"><span class="dot ok"></span>Compute philosophy</p>
