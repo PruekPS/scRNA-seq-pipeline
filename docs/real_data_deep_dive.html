@@ -191,9 +191,9 @@
     <h2>What's ready, what's not</h2>
     <ul>
       <li><strong>Environment:</strong> <code>envs/environment.yml</code> verified to recreate an identical, functional <code>scrna</code> env both locally (fresh env, re-ran QC, byte-identical results) and on HiPerGator directly.</li>
-      <li><strong>Code:</strong> repo synced to <code>/blue/esayour/&lt;user&gt;/scRNA-pipeline/</code> on HiPerGator.</li>
-      <li><strong>Account:</strong> confirmed real SLURM account/QoS (<code>esayour</code> / <code>esayour,esayour-b</code>) directly from HiPerGator &mdash; matches what was inferred earlier from the storage path.</li>
-      <li><strong>Not yet done:</strong> actually submitting the full 987,585-cell run. That's queued for explicit approval rather than run unattended &mdash; real compute allocation, first HPC run for this pipeline, no one available to catch a failure mid-run.</li>
+      <li><strong>Code:</strong> repo synced to <code>/blue/&lt;group&gt;/&lt;user&gt;/scRNA-pipeline/</code> on HiPerGator.</li>
+      <li><strong>Account:</strong> real SLURM account/QoS confirmed directly from HiPerGator (kept in a local, untracked notes file, not published here) &mdash; matches what was inferred earlier from the storage path.</li>
+      <li><strong>Status:</strong> the full 987,585-cell run has been submitted as a SLURM batch job on HiPerGator once the driver was updated to include the raw-data loading step and re-sized for real scale (128GB/16 CPU/24h vs. the 64GB/8CPU/12h used for local smoke-testing) and smoke-tested end-to-end against the real 50k subset first.</li>
     </ul>
   </section>
 
