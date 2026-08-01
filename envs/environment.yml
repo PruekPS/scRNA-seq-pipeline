@@ -52,4 +52,6 @@ dependencies:
   - r-remotes>=2.5
   - r-nmf>=0.28
   - bioconductor-complexheatmap>=2.22
+  - bioconductor-biocneighbors>=1.24
   - r-circlize>=0.4
+  - r-svglite>=2.1
