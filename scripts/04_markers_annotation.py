@@ -27,12 +27,17 @@ import pandas as pd
 import scanpy as sc
 
 # Canonical PBMC markers (Satija lab / scanpy PBMC3k tutorials) -- smoke-test only.
+# Kept deliberately specific per category -- see docs/markers_annotation_deep_dive.html
+# section 04 for why: an earlier version included CST3/HLA-DPB1/HLA-DPA1 under
+# "Dendritic cell", which are also broadly expressed in monocytes and ended up
+# stealing two correctly-labeled monocyte clusters. FCER1A/CLEC10A are more DC-specific.
 PBMC_MARKERS = {
     "T cell": ["CD3D", "CD3E", "CD3G", "IL7R"],
     "B cell": ["MS4A1", "CD79A", "CD79B"],
-    "Monocyte": ["CD14", "LYZ", "FCGR3A", "MS4A7"],
+    "Monocyte": ["CD14", "LYZ", "FCGR3A", "MS4A7", "S100A8", "S100A9"],
     "NK cell": ["NKG7", "GNLY", "KLRD1"],
     "Platelet": ["PPBP", "PF4"],
+    "Dendritic cell": ["FCER1A", "CLEC10A"],
 }
 
 

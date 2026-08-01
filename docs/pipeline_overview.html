@@ -545,6 +545,7 @@
   <section id="qc">
     <p class="stage-label">05 &middot; QC process and biological relevance</p>
     <h2>What each metric is actually catching</h2>
+    <p class="sans" style="font-size:0.88rem"><strong>Deep-dive reports</strong> (method detail + computed comparisons against alternative methods, on PBMC3k): <a href="qc_deep_dive.html">QC</a> &middot; <a href="normalize_pca_deep_dive.html">Normalization/HVG/PCA</a> &middot; <a href="clustering_deep_dive.html">Clustering</a> &middot; <a href="markers_annotation_deep_dive.html">Markers &amp; annotation</a></p>
     <p>Rather than fixed cutoffs (e.g. a flat "10% mitochondrial" rule), the plan follows the adaptive, median-absolute-deviation (MAD) approach formalized in OSCA<sup><a href="#ref3">3</a></sup> and implemented in the SCTK-QC pipeline<sup><a href="#ref1">1</a></sup>: thresholds are set per-sample from the data's own distribution, since "normal" values shift with cell type, tissue, and even chemistry version.</p>
     <table>
       <thead>
