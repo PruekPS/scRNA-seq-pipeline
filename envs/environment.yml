@@ -1,0 +1,33 @@
+# Recreate with: mamba env create -f envs/environment.yml
+# Verify with:   conda run -n scrna python -c "import scanpy; print(scanpy.__version__)"
+#                conda run -n scrna Rscript -e 'packageVersion("Seurat")'
+name: scrna
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - anndata
+  - bioconductor-singlecellexperiment
+  - bioconductor-zellkonverter
+  - ipykernel
+  - jupyterlab
+  - leidenalg
+  - matplotlib
+  - numpy
+  - pandas
+  - python=3.11
+  - python-igraph
+  - r-base
+  - r-dplyr
+  - r-ggplot2
+  - r-harmony
+  - r-matrix
+  - r-patchwork
+  - r-seurat
+  - scanpy
+  - scikit-misc
+  - scipy
+  - scrublet
+  - seaborn
+  - umap-learn
+
