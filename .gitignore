@@ -1,0 +1,33 @@
+# Raw and intermediate data — never belongs in git
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.bam
+*.bcl
+*.bcl.gz
+*.h5ad
+*.h5
+*.rds
+*.loom
+*.mtx
+
+# Licensed / copyrighted reference material — do not publish
+*.pdf
+
+# Parse split-pipe: licensed software, downloaded separately per-user, never committed
+pipeline/split-pipe/ParseBiosciences-Pipeline*/
+pipeline/split-pipe/*.tar.gz
+pipeline/split-pipe/*.whl
+
+# Environments / caches
+.snakemake/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.Rproj.user/
+.Rhistory
+renv/library/
+
+# OS cruft
+.DS_Store
