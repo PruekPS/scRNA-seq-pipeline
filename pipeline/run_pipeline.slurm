@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128gb
+#SBATCH --mem=400gb
 #SBATCH --time=24:00:00
 #SBATCH --mail-type=END,FAIL
 #
@@ -14,9 +14,14 @@
 #
 # Resources sized for a real, full-scale Parse run (~1M cells): a
 # 987,585-cell x 60,664-gene matrix is ~1.18B non-zero entries, ~17GB just
-# to parse -- 128GB/16 CPU/24h is a real allocation for real data, not the
-# 64GB/8CPU/12h used for local smoke-testing at 50k cells. Resize down if
-# your actual dataset is smaller than this.
+# to parse. First real attempt at 128GB OOM-killed inside
+# scripts/01_qc_filter.py (Scrublet doublet detection densifies working
+# arrays internally; peak usage briefly spiked well past the last-sampled
+# MaxRSS of ~67.6GB before the kill). Bumped to 400GB, comfortably inside
+# what hpg-default nodes actually have (~1TB/node, confirmed via `sinfo`)
+# without grabbing a whole node. Resize down if your actual dataset is
+# smaller than this -- the 64GB/8CPU/12h used for local 50k-cell
+# smoke-testing is the number to scale from, not this one.
 #
 # Usage (run sbatch from inside the repo -- REPO_ROOT is derived from
 # $SLURM_SUBMIT_DIR, not hardcoded; --output also needs a real path
