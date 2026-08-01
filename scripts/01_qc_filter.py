@@ -13,6 +13,8 @@ saved as .h5ad before running this script.
 Usage:
     python 01_qc_filter.py --input raw.h5ad --output filtered.h5ad --plot-dir qc_plots/
     python 01_qc_filter.py --input raw.h5ad --output filtered.h5ad --mad 3 --species mouse
+    python 01_qc_filter.py --input raw.h5ad --output filtered.h5ad --species canine --mt-prefix MT-
+    python 01_qc_filter.py --input raw.h5ad --output filtered.h5ad --batch-key sample
 """
 import argparse
 import pathlib
@@ -22,6 +24,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import scanpy as sc
+
+# Mitochondrial gene-symbol prefix by species convention. Human/canine
+# reference annotations (Ensembl/NCBI) both typically use an "MT-" prefix
+# (HGNC-style); mouse uses lowercase "mt-" (MGI convention). Canine
+# annotation conventions vary more by genome build/GTF source than
+# human/mouse do -- override with --mt-prefix if this guess is wrong for
+# your specific reference.
+SPECIES_MT_PREFIX = {"human": "MT-", "mouse": "mt-", "canine": "MT-"}
 
 
 def is_outlier(adata, metric, n_mads):
@@ -33,9 +43,13 @@ def is_outlier(adata, metric, n_mads):
     return (values < med - n_mads * mad) | (values > med + n_mads * mad)
 
 
-def compute_qc_metrics(adata, species):
-    mt_prefix = "MT-" if species == "human" else "mt-"
+def compute_qc_metrics(adata, mt_prefix):
     adata.var["mt"] = adata.var_names.str.startswith(mt_prefix)
+    n_mt = int(adata.var["mt"].sum())
+    if n_mt == 0:
+        print(f"WARNING: 0 genes matched mt-prefix '{mt_prefix}' -- pct_counts_mt will be 0 for "
+              f"every cell and the mito QC filter will do nothing. Check --species/--mt-prefix "
+              f"against the gene symbols actually in this reference (adata.var_names).")
     sc.pp.calculate_qc_metrics(
         adata, qc_vars=["mt"], percent_top=None, log1p=True, inplace=True
     )
@@ -54,8 +68,23 @@ def flag_outliers(adata, n_mads, hard_mt_ceiling):
     return adata
 
 
-def flag_doublets(adata):
-    sc.pp.scrublet(adata)
+def flag_doublets(adata, batch_key=None):
+    # Running Scrublet pooled across many donors/samples in one call both (a)
+    # violates Scrublet's own methodology -- it simulates doublets from and
+    # fits a kNN within the SAME library, so mixing 24 donors treats
+    # cross-donor cell pairs as plausible same-library doublets, and its
+    # per-library doublet-rate assumption breaks (Wolock, Lopez & Klein,
+    # Cell Systems 2019 -- the Scrublet paper -- recommends running per
+    # 10x lane/sample) -- and (b) is what OOM-killed the real full-scale
+    # HPC run even at 400GB: Scrublet's internal simulated-doublet PCA/kNN
+    # step holds effectively 2x the full 987,585-cell matrix in memory at
+    # once. scanpy's batch_key loops Scrublet per batch internally, so peak
+    # memory is bounded by the LARGEST single sample, not the whole dataset.
+    if batch_key and batch_key in adata.obs and adata.obs[batch_key].nunique() > 1:
+        print(f"Running Scrublet per-batch on '{batch_key}' ({adata.obs[batch_key].nunique()} batches)")
+        sc.pp.scrublet(adata, batch_key=batch_key)
+    else:
+        sc.pp.scrublet(adata)
     return adata
 
 
@@ -90,9 +119,20 @@ def main():
         "--mt-ceiling", type=float, default=8.0, dest="mt_ceiling",
         help="Hard mitochondrial-percent ceiling applied in addition to the adaptive threshold",
     )
-    parser.add_argument("--species", default="human", choices=["human", "mouse"])
+    parser.add_argument("--species", default="human", choices=["human", "mouse", "canine"])
+    parser.add_argument(
+        "--mt-prefix", default=None, dest="mt_prefix",
+        help="Override the species-inferred mitochondrial gene-symbol prefix "
+             "(e.g. if your reference annotation's convention differs from the default)",
+    )
     parser.add_argument("--min-genes", type=int, default=200, help="Hard floor: min genes detected per cell")
     parser.add_argument("--min-cells", type=int, default=3, help="Hard floor: min cells a gene must appear in")
+    parser.add_argument(
+        "--batch-key", default="sample", dest="batch_key",
+        help="adata.obs column to run Scrublet separately per batch on (default: 'sample'). "
+             "Falls back to a single pooled run automatically if this column is missing or "
+             "has only one value (e.g. single-sample data) -- pass '' to force pooled mode.",
+    )
     args = parser.parse_args()
 
     adata = sc.read_h5ad(args.input)
@@ -102,9 +142,10 @@ def main():
     sc.pp.filter_cells(adata, min_genes=args.min_genes)
     sc.pp.filter_genes(adata, min_cells=args.min_cells)
 
-    adata = compute_qc_metrics(adata, species=args.species)
+    mt_prefix = args.mt_prefix or SPECIES_MT_PREFIX[args.species]
+    adata = compute_qc_metrics(adata, mt_prefix=mt_prefix)
     adata = flag_outliers(adata, n_mads=args.mad, hard_mt_ceiling=args.mt_ceiling)
-    adata = flag_doublets(adata)
+    adata = flag_doublets(adata, batch_key=args.batch_key or None)
 
     save_qc_plots(adata, args.plot_dir)
 

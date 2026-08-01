@@ -32,6 +32,12 @@
 #     --output=/path/to/logs/scrna-pipeline-%j.out \
 #     pipeline/run_pipeline.slurm \
 #     /path/to/DGE_filtered_dir /path/to/output_dir [sample_name] [mad_multiplier]
+#
+# QC (step 1) runs Scrublet per-'sample' batch by default (01_qc_filter.py's
+# --batch-key defaults to "sample") -- this is both more correct (Scrublet
+# assumes a single library per run) and far lower peak memory than the
+# original pooled call, which OOM-killed a 987k-cell run even at 400GB.
+# Single-sample data falls back to pooled mode automatically.
 set -euo pipefail
 
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"

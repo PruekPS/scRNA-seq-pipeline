@@ -26,8 +26,22 @@ additive step for real-scale data:
 
 This is still a marker-dictionary heuristic, not a reference-based classifier
 (e.g. CellTypist, Azimuth) -- see docs/pipeline_overview.html section 06 for
-that flagged-but-not-yet-adopted alternative. Still human-PBMC-specific;
-swap FINE_PBMC_MARKERS for a tissue-appropriate reference for other data.
+that flagged-but-not-yet-adopted alternative.
+
+Multi-species: --species selects one of three PBMC/blood-immune marker
+dictionaries (human, mouse, canine). Human and mouse marker choices follow
+standard immunology nomenclature/case convention for each species (MGI
+lowercase-after-first-letter for mouse gene symbols, e.g. Cd3d not CD3D) and
+are broadly consistent with large reference atlases (Tabula Sapiens, Science
+2022, for human; Tabula Muris Consortium, Nature 2018, and ImmGen, Heng et
+al. Nat Immunol 2008, for mouse). Canine immune-marker orthology is
+considerably less standardized -- there is no equivalent large public
+reference atlas as canonical as the human/mouse ones -- so the canine
+dictionary here is a starting point carried over from human nomenclature
+(canine gene symbols largely follow human-style HGNC-like naming, unlike
+mouse's distinct case convention) and should be manually validated against
+your specific canine reference annotation and, ideally, known canine
+PBMC marker literature before trusting its output.
 
 NOT YET TEST-RUN as of this commit (see project memory) -- validate against
 tests/data/ (or a small real subset) before trusting output on a full-scale run.
@@ -38,6 +52,10 @@ Input: the clustered .h5ad written by scripts/03_cluster.py (optionally after
 Usage:
     python 04b_better_annotation.py --input clustered.h5ad --output annotated_v2.h5ad \
         --resolution 0.6 --plot-dir marker_plots_v2/ --margin 0.5
+    python 04b_better_annotation.py --input clustered.h5ad --output annotated_v2.h5ad \
+        --species mouse
+    python 04b_better_annotation.py --input clustered.h5ad --output annotated_v2.h5ad \
+        --species canine
 """
 import argparse
 import pathlib
@@ -49,11 +67,11 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 
-# Finer-grained than scripts/04_markers_annotation.py's PBMC_MARKERS -- still
-# human PBMC, still canonical (Satija lab / Azimuth PBMC reference markers),
-# just more categories so real clusters have somewhere specific to land
-# instead of collapsing into one of 6 broad buckets.
-FINE_PBMC_MARKERS = {
+# Finer-grained than scripts/04_markers_annotation.py's PBMC_MARKERS -- more
+# categories so real clusters have somewhere specific to land instead of
+# collapsing into one of 6 broad buckets. See module docstring for the
+# per-species caveats (especially canine).
+FINE_PBMC_MARKERS_HUMAN = {
     "CD4 T cell": ["IL7R", "CD3D", "CD3E", "CD4"],
     "CD8 T cell": ["CD8A", "CD8B", "CD3D", "CD3E"],
     "Treg": ["FOXP3", "IL2RA", "CTLA4"],
@@ -66,6 +84,54 @@ FINE_PBMC_MARKERS = {
     "pDC": ["LILRA4", "IL3RA", "GZMB"],
     "Platelet": ["PPBP", "PF4", "ITGA2B"],
     "HSPC": ["CD34", "SOX4", "SPINK2"],
+}
+
+# Mouse orthologs, MGI gene-symbol casing (first letter capital, rest
+# lowercase). Some markers differ from the direct human ortholog because the
+# more commonly used mouse marker for that population differs in practice
+# (e.g. Lyz2 not Lyz1, Cd8b1 not Cd8b, Ncr1/Klrb1c for NK instead of KLRD1,
+# Siglech for pDC -- these are the markers ImmGen/Tabula Muris-style mouse
+# immunology papers actually use, not literal 1:1 symbol translations).
+FINE_PBMC_MARKERS_MOUSE = {
+    "CD4 T cell": ["Il7r", "Cd3d", "Cd3e", "Cd4"],
+    "CD8 T cell": ["Cd8a", "Cd8b1", "Cd3d", "Cd3e"],
+    "Treg": ["Foxp3", "Il2ra", "Ctla4"],
+    "NK cell": ["Nkg7", "Ncr1", "Klrb1c"],
+    "B cell": ["Ms4a1", "Cd79a", "Cd79b", "Cd19"],
+    "Plasma cell": ["Sdc1", "Jchain", "Xbp1"],
+    "CD14+ Monocyte": ["Cd14", "Lyz2", "S100a8", "S100a9"],
+    "CD16+ Monocyte": ["Fcgr4", "Nr4a1", "Cx3cr1"],
+    "cDC": ["Itgax", "Xcr1", "Clec9a", "Sirpa"],
+    "pDC": ["Siglech", "Bst2", "Il3ra"],
+    "Platelet": ["Pf4", "Itga2b", "Gp9"],
+    "HSPC": ["Cd34", "Kit", "Flt3"],
+}
+
+# Canine -- see module docstring caveat. Carried over from the human
+# dictionary (canine symbols generally mirror human HGNC-style naming) with
+# a few entries dropped where the human gene has no well-annotated canine
+# ortholog in common references (e.g. FCER1A, LILRA4). Validate against
+# your actual canine GTF/annotation -- gene presence and naming vary more
+# across canine reference builds than across human ones.
+FINE_PBMC_MARKERS_CANINE = {
+    "CD4 T cell": ["IL7R", "CD3D", "CD3E", "CD4"],
+    "CD8 T cell": ["CD8A", "CD8B", "CD3D", "CD3E"],
+    "Treg": ["FOXP3", "IL2RA", "CTLA4"],
+    "NK cell": ["NKG7", "GNLY", "KLRD1", "NCAM1"],
+    "B cell": ["MS4A1", "CD79A", "CD79B", "CD19"],
+    "Plasma cell": ["MZB1", "JCHAIN", "XBP1"],
+    "CD14+ Monocyte": ["CD14", "LYZ", "S100A8", "S100A9"],
+    "CD16+ Monocyte": ["FCGR3A", "MS4A7"],
+    "cDC": ["CLEC10A", "CD1C"],
+    "pDC": ["IL3RA", "GZMB"],
+    "Platelet": ["PPBP", "PF4", "ITGA2B"],
+    "HSPC": ["CD34", "SPINK2"],
+}
+
+SPECIES_MARKERS = {
+    "human": FINE_PBMC_MARKERS_HUMAN,
+    "mouse": FINE_PBMC_MARKERS_MOUSE,
+    "canine": FINE_PBMC_MARKERS_CANINE,
 }
 
 
@@ -134,11 +200,15 @@ def main():
     parser.add_argument("--output", required=True, help="Path to write the annotated .h5ad")
     parser.add_argument("--plot-dir", default="marker_plots_v2", help="Directory for marker/annotation plots")
     parser.add_argument("--resolution", default="0.6", help="Which leiden_r<resolution> column to annotate")
+    parser.add_argument("--species", default="human", choices=["human", "mouse", "canine"],
+                         help="Selects the marker dictionary -- see module docstring for per-species caveats")
     parser.add_argument("--margin", type=float, default=0.5,
                          help="Minimum z-score gap (in SDs) between top and runner-up label "
                               "to accept a confident assignment; below this, cluster is 'Ambiguous'")
     parser.add_argument("--markers-csv", default=None, help="Optional path to write the top-markers-per-cluster table")
     args = parser.parse_args()
+
+    marker_dict = SPECIES_MARKERS[args.species]
 
     adata = sc.read_h5ad(args.input)
     groupby = f"leiden_r{args.resolution}"
@@ -148,7 +218,7 @@ def main():
     markers_df = detect_markers(adata, groupby)
     print(markers_df.groupby("group").head(5).to_string(index=False))
 
-    adata, cluster_scores, z, results = annotate_with_confidence(adata, groupby, FINE_PBMC_MARKERS, margin=args.margin)
+    adata, cluster_scores, z, results = annotate_with_confidence(adata, groupby, marker_dict, margin=args.margin)
     print()
     print("Per-cluster z-scored marker-set scores:")
     print(z.round(2).to_string())
@@ -158,7 +228,7 @@ def main():
           f"(margin >= {args.margin} SD); {n_ambiguous} flagged Ambiguous for manual review.")
     print(pd.Series(results).to_string())
 
-    save_marker_plots(adata, groupby, FINE_PBMC_MARKERS, args.plot_dir)
+    save_marker_plots(adata, groupby, marker_dict, args.plot_dir)
 
     if args.markers_csv:
         markers_df.to_csv(args.markers_csv, index=False)

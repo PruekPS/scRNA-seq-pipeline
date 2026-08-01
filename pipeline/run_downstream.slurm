@@ -35,7 +35,7 @@
 #   sbatch --account=<your-account> --qos=<your-qos> \
 #     --output=/path/to/logs/scrna-downstream-%j.out \
 #     pipeline/run_downstream.slurm \
-#     /path/to/OUT_DIR [batch_key] [resolution] [skip_harmony: 0|1]
+#     /path/to/OUT_DIR [batch_key] [resolution] [skip_harmony: 0|1] [species: human|mouse|canine]
 #
 # OUT_DIR must already contain 02_pca.h5ad from run_pipeline.slurm. All
 # downstream outputs are written into the same OUT_DIR.
@@ -44,10 +44,11 @@ set -euo pipefail
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
 ENV_NAME="scrna"
 
-OUT_DIR="${1:?Usage: sbatch run_downstream.slurm /path/to/OUT_DIR [batch_key] [resolution] [skip_harmony: 0|1]}"
+OUT_DIR="${1:?Usage: sbatch run_downstream.slurm /path/to/OUT_DIR [batch_key] [resolution] [skip_harmony: 0|1] [species]}"
 BATCH_KEY="${2:-sample}"
 RESOLUTION="${3:-0.6}"
 SKIP_HARMONY="${4:-0}"
+SPECIES="${5:-human}"
 
 PCA_H5AD="${OUT_DIR}/02_pca.h5ad"
 if [ ! -f "${PCA_H5AD}" ]; then
@@ -83,12 +84,13 @@ python scripts/03_cluster.py \
   --plot-dir "${OUT_DIR}/cluster_plots_v2" \
   --use-rep "${USE_REP}"
 
-echo "=== [3/4] Better annotation (resolution=${RESOLUTION}) ==="
+echo "=== [3/4] Better annotation (resolution=${RESOLUTION}, species=${SPECIES}) ==="
 python scripts/04b_better_annotation.py \
   --input "${OUT_DIR}/03b_clustered.h5ad" \
   --output "${OUT_DIR}/04b_annotated.h5ad" \
   --plot-dir "${OUT_DIR}/marker_plots_v2" \
   --resolution "${RESOLUTION}" \
+  --species "${SPECIES}" \
   --markers-csv "${OUT_DIR}/top_markers_v2.csv"
 
 echo "=== [4/4] Export for CellChat + run CellChat ==="
