@@ -5,11 +5,14 @@ Leiden with a resolution scan rather than one fixed resolution. UMAP is
 computed purely for visualization, not as an input to any later
 quantitative step.
 
-Input: the PCA-ready .h5ad written by scripts/02_normalize_pca.py.
+Input: the PCA-ready .h5ad written by scripts/02_normalize_pca.py, or the
+Harmony-corrected .h5ad written by scripts/02b_harmony_integration.py (pass
+--use-rep X_pca_harmony in that case -- see pipeline/run_downstream.slurm).
 
 Usage:
     python 03_cluster.py --input pca.h5ad --output clustered.h5ad --plot-dir cluster_plots/
     python 03_cluster.py --input pca.h5ad --output clustered.h5ad --resolutions 0.2,0.5,1.0
+    python 03_cluster.py --input harmony.h5ad --output clustered.h5ad --use-rep X_pca_harmony
 """
 import argparse
 import pathlib
@@ -51,12 +54,20 @@ def main():
         "--resolutions", default="0.2,0.4,0.6,0.8,1.0",
         help="Comma-separated Leiden resolutions to scan",
     )
+    parser.add_argument(
+        "--use-rep", default="X_pca", dest="use_rep",
+        help="obsm key to build the neighbor graph on (default: X_pca). "
+             "Pass X_pca_harmony after running 02b_harmony_integration.py.",
+    )
     args = parser.parse_args()
     resolutions = [float(r) for r in args.resolutions.split(",")]
 
     adata = sc.read_h5ad(args.input)
 
-    sc.pp.neighbors(adata, n_pcs=args.n_pcs, use_rep="X_pca")
+    if args.use_rep not in adata.obsm:
+        raise SystemExit(f"--use-rep '{args.use_rep}' not found in adata.obsm (available: {list(adata.obsm.keys())})")
+
+    sc.pp.neighbors(adata, n_pcs=args.n_pcs, use_rep=args.use_rep)
     sc.tl.umap(adata)
 
     for res in resolutions:
