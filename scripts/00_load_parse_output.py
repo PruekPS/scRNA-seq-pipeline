@@ -35,15 +35,33 @@ BARCODE_COLUMN_CANDIDATES = ["bc_wells", "cell_barcode", "barcode", "cell_barcod
 GENE_NAME_COLUMN_CANDIDATES = ["gene_name", "gene_symbol", "name"]
 
 
-def find_matrix_file(sample_dir: pathlib.Path) -> pathlib.Path:
-    for fname in ("count_matrix.mtx", "DGE.mtx"):
-        candidate = sample_dir / fname
-        if candidate.exists():
-            return candidate
+def find_one(sample_dir: pathlib.Path, patterns: list[str], what: str) -> pathlib.Path:
+    """Real Parse output filenames aren't perfectly consistent across
+    versions/datasets -- e.g. published datasets use dataset-suffixed names
+    like DGE_1M_PBMC.mtx rather than the generic DGE.mtx the docs describe.
+    Glob-match instead of assuming an exact filename."""
+    for pattern in patterns:
+        matches = sorted(sample_dir.glob(pattern))
+        if matches:
+            if len(matches) > 1:
+                print(f"Warning: multiple {what} candidates matched {pattern} in {sample_dir}, using {matches[0].name}")
+            return matches[0]
     raise FileNotFoundError(
-        f"No count_matrix.mtx or DGE.mtx found in {sample_dir} -- "
+        f"No {what} found in {sample_dir} (tried patterns {patterns}) -- "
         f"is this a split-pipe/Trailmaker DGE_filtered directory?"
     )
+
+
+def find_matrix_file(sample_dir: pathlib.Path) -> pathlib.Path:
+    return find_one(sample_dir, ["count_matrix*.mtx", "DGE*.mtx", "*.mtx"], "count matrix")
+
+
+def find_genes_file(sample_dir: pathlib.Path) -> pathlib.Path:
+    return find_one(sample_dir, ["all_genes*.csv", "*genes*.csv"], "gene metadata")
+
+
+def find_cells_file(sample_dir: pathlib.Path) -> pathlib.Path:
+    return find_one(sample_dir, ["cell_metadata*.csv", "*cell*metadata*.csv"], "cell metadata")
 
 
 def pick_column(df: pd.DataFrame, candidates: list[str], what: str) -> str:
@@ -55,17 +73,23 @@ def pick_column(df: pd.DataFrame, candidates: list[str], what: str) -> str:
 
 def load_one_sample(sample_dir: pathlib.Path, sample_name: str) -> ad.AnnData:
     matrix_path = find_matrix_file(sample_dir)
-    genes_path = sample_dir / "all_genes.csv"
-    cells_path = sample_dir / "cell_metadata.csv"
-    if not genes_path.exists():
-        raise FileNotFoundError(f"Missing {genes_path}")
-    if not cells_path.exists():
-        raise FileNotFoundError(f"Missing {cells_path}")
+    genes_path = find_genes_file(sample_dir)
+    cells_path = find_cells_file(sample_dir)
+    print(f"  matrix: {matrix_path.name}, genes: {genes_path.name}, cells: {cells_path.name}")
 
     X = scipy.io.mmread(matrix_path).tocsr()
 
     genes = pd.read_csv(genes_path)
     gene_name_col = pick_column(genes, GENE_NAME_COLUMN_CANDIDATES, "gene name")
+    if "gene_id" in genes.columns:
+        n_missing = genes[gene_name_col].isna().sum()
+        if n_missing:
+            # Real gene annotation files routinely have no symbol for a chunk of
+            # Ensembl IDs (lncRNAs, pseudogenes, etc.) -- e.g. ~1/3 of genes in
+            # the Parse 1M PBMC dataset. Falling back to gene_id keeps every
+            # gene instead of silently dropping or crashing on the NaN index.
+            print(f"  {n_missing}/{len(genes)} genes have no {gene_name_col} -- falling back to gene_id for those")
+            genes[gene_name_col] = genes[gene_name_col].fillna(genes["gene_id"])
 
     cells = pd.read_csv(cells_path)
     barcode_col = pick_column(cells, BARCODE_COLUMN_CANDIDATES, "cell barcode")
@@ -81,7 +105,14 @@ def load_one_sample(sample_dir: pathlib.Path, sample_name: str) -> ad.AnnData:
 
     adata = ad.AnnData(X=X, obs=cells, var=genes.set_index(gene_name_col))
     adata.var_names_make_unique()
-    adata.obs["sample"] = sample_name
+    if "sample" in adata.obs.columns:
+        # cell_metadata.csv can already carry real per-cell sample/donor IDs
+        # (e.g. multiple donors pooled into one DGE_filtered folder) -- don't
+        # clobber that with the folder-level --sample-dir label.
+        print(f"  cell_metadata already has a 'sample' column "
+              f"({adata.obs['sample'].nunique()} unique values) -- keeping it as-is.")
+    else:
+        adata.obs["sample"] = sample_name
     return adata
 
 

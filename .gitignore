@@ -11,6 +11,10 @@
 *.rds
 *.loom
 *.mtx
+*.zip
+
+# All test/smoke-test data, always -- see tests/README.md for how to regenerate
+tests/data/
 
 # Licensed / copyrighted reference material — do not publish
 *.pdf
