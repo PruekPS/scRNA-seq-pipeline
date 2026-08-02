@@ -12,13 +12,17 @@
 # the installer's exit code. Pins below match what's proven to work by
 # scripts/01-04 running clean end-to-end (see docs/*_deep_dive.html).
 #
-# harmonypy, r-remotes, r-nmf, bioconductor-complexheatmap, r-circlize were
-# added for scripts/02b_harmony_integration.py and scripts/07_cellchat_analysis.R
-# (Harmony batch integration, CellChat cell-cell communication) -- NOT YET
-# TESTED by recreating the env from scratch, unlike everything above this
-# note. CellChat itself is NOT conda-installable and needs a one-time
-# `Rscript -e 'remotes::install_github("jinworks/CellChat")'` after this env
-# is created -- see scripts/07_cellchat_analysis.R docstring.
+# harmonypy + the r-* / bioconductor-* deps below were added for
+# scripts/02b_harmony_integration.py and scripts/07_cellchat_analysis.R
+# (Harmony batch integration, CellChat cell-cell communication). This
+# environment.yml only gets you the conda-installable pieces -- CellChat
+# itself, NMF (needs >=0.28, conda caps at 0.21.0), and presto (CellChat's
+# fast-Wilcoxon backend, GitHub-only, required or identifyOverExpressedGenes
+# errors outright) all need a one-time GitHub/CRAN install AFTER this env is
+# created. Run `bash envs/install_r_extras.sh` (as a SLURM job on a compute
+# node, not the login node) to do all of that in one go -- each individual
+# step (not yet the consolidated script as a single run) is validated
+# against real failures hit on the 907,696-cell run on 2026-08-01/02.
 name: scrna
 channels:
   - bioconda
