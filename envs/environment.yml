@@ -50,8 +50,13 @@ dependencies:
   - bioconductor-singlecellexperiment>=1.32
   - bioconductor-zellkonverter>=1.20
   - r-remotes>=2.5
-  - r-nmf>=0.28
   - bioconductor-complexheatmap>=2.22
   - bioconductor-biocneighbors>=1.24
   - r-circlize>=0.4
   - r-svglite>=2.1
+  # r-nmf deliberately NOT listed here: conda-forge/bioconda cap out at
+  # NMF 0.21.0 (every build, every R version, confirmed via `conda search`)
+  # but CellChat requires NMF >=0.23.0. Install it from CRAN instead --
+  # `Rscript -e 'remotes::install_version("NMF", version="0.28", repos="https://cloud.r-project.org")'`
+  # -- which compiles cleanly on HiPerGator's toolchain (unlike svglite,
+  # which needed the conda-precompiled version above).
