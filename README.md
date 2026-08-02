@@ -16,7 +16,7 @@ reports for each stage (QC, normalization/PCA, clustering, annotation, and
 a real-data validation run) are in [`docs/`](docs/), each with a real,
 computed comparison against an alternative method.
 
-**New to this pipeline?** [`docs/student_hpc_tutorial.html`](docs/student_hpc_tutorial.html)
+**New to this pipeline?** [`teaching/student_hpc_tutorial.html`](teaching/student_hpc_tutorial.html)
 is a step-by-step guide to running it yourself on HiPerGator — no coding
 assistant required — written to teach the reasoning behind each stage, not
 just the commands.
@@ -58,6 +58,7 @@ is still being tuned for memory/parallelism at ~700,000-cell scale — see
 
 ```
 docs/                 living pipeline documentation + per-stage deep-dive reports
+teaching/              student-facing, no-assistant-required tutorial (student_hpc_tutorial.html)
 scripts/               00-04: core pipeline (load, QC, normalize/PCA, cluster, annotate)
                         02b/04b: optional Harmony integration / finer multi-species annotation
                         06-07: CellChat export (Python) + analysis (R)
