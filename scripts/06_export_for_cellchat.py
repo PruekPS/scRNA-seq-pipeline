@@ -20,8 +20,9 @@ Input: an annotated .h5ad with a cell-type/group column in .obs -- either
 scripts/04_markers_annotation.py's 'cell_type_demo' or
 scripts/04b_better_annotation.py's 'cell_type_v2'.
 
-NOT YET TEST-RUN as of this commit (see project memory) -- validate against
-tests/data/ (or a small real subset) before trusting output on a full-scale run.
+Validated on the real full-scale run (2026-08-02): exported 694,803 cells
+(907,696 minus 212,893 Ambiguous-labeled cells excluded via
+--exclude-ambiguous) across 10 confidently-annotated cell types.
 
 Usage:
     python 06_export_for_cellchat.py --input annotated_v2.h5ad \

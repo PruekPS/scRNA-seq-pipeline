@@ -43,8 +43,11 @@ mouse's distinct case convention) and should be manually validated against
 your specific canine reference annotation and, ideally, known canine
 PBMC marker literature before trusting its output.
 
-NOT YET TEST-RUN as of this commit (see project memory) -- validate against
-tests/data/ (or a small real subset) before trusting output on a full-scale run.
+Validated on the real 907,696-cell full-scale run (2026-08-02, species=human,
+resolution=0.6): 12/16 clusters confidently assigned, 4 correctly flagged
+Ambiguous (3 CD4/CD8 T-cell boundary clusters, 1 Platelet/HSPC boundary
+cluster) rather than forced into a wrong label. Mouse/canine dictionaries
+are not yet validated against real non-human data.
 
 Input: the clustered .h5ad written by scripts/03_cluster.py (optionally after
 02b_harmony_integration.py).

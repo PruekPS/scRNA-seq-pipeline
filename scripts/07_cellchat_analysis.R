@@ -8,19 +8,22 @@
 # aggregation -> network summary. No live R<->Python bridge is used anywhere
 # in this step (see 06_export_for_cellchat.py docstring for why).
 #
-# CellChat is NOT installable via conda/bioconda as a single package -- it
-# ships only on GitHub. Install once, inside the `scrna` conda env's R:
-#   Rscript -e 'remotes::install_github("jinworks/CellChat")'
-# (jinworks/CellChat is the actively maintained fork as of this writing;
-# the original sqjin/CellChat repo is archived -- check which is current
-# before installing on HPC, since GitHub package locations do drift).
-# r-remotes, r-nmf, bioconductor-complexheatmap, r-circlize are pinned in
-# envs/environment.yml as CellChat's conda-installable dependencies.
+# CellChat is NOT installable via conda/bioconda as a single package, and
+# neither are two of its dependencies (NMF needs >=0.28, conda caps at
+# 0.21.0; presto is GitHub-only and required, not optional -- without it
+# identifyOverExpressedGenes() errors outright). Run
+# `bash envs/install_r_extras.sh` once (as a SLURM job, not on the login
+# node) to install all of it -- see that file for the full story, including
+# why jinworks/CellChat (not the archived sqjin/CellChat) is the fork to use.
 #
-# NOT YET TEST-RUN as of this commit (see project memory) -- validate against
-# a small real subset before trusting output on a full-scale run. CellChat is
-# also compute-heavy (permutation-based significance testing) -- expect this
-# to be the slowest step in the pipeline at real cell counts.
+# Validated on the real 907,696-cell full-scale run (2026-08-02): 694,803
+# cells across 10 cell types, 291 significant L-R interactions across 19
+# pathways, completed in ~1.5h. --workers=1 is REQUIRED at this scale, not
+# just a default -- future::multisession with >1 worker duplicates
+# CellChat's large intermediate data per worker process and OOM-killed a
+# 128gb job where --workers=1 completed fine in ~300gb. This is the
+# slowest step in the pipeline at real cell counts (permutation-based
+# significance testing) -- budget hours, not minutes.
 #
 # Usage (local):
 #   Rscript 07_cellchat_analysis.R --input-dir cellchat_input/ \
@@ -34,7 +37,7 @@ suppressMessages({
 })
 
 parse_args <- function(args) {
-  out <- list(species = "human", min.cells = 10, workers = 4)
+  out <- list(species = "human", min.cells = 10, workers = 1)
   for (a in args) {
     if (!startsWith(a, "--") || !grepl("=", a)) next
     kv <- sub("^--", "", a)

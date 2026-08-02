@@ -28,11 +28,12 @@ against real Parse Evercode data at full scale (~907,700 cells post-QC
 from the real ~987,600-cell dataset) on HiPerGator — see
 [`docs/real_data_deep_dive.html`](docs/real_data_deep_dive.html) for the
 methodology (validated first on a 50,000-cell subset, then at full scale).
-Harmony batch integration and the finer, confidence-gated multi-species
-(human/mouse/canine) annotation step are validated at the same full scale.
-CellChat cell-cell communication is implemented and installs cleanly but
-is still being tuned for memory/parallelism at ~700,000-cell scale — see
-`scripts/07_cellchat_analysis.R` and `scripts/` below for what's stable vs. new.
+Harmony batch integration, the finer confidence-gated multi-species
+(human/mouse/canine) annotation step, and CellChat cell-cell communication
+are all now validated end-to-end at full scale: on the real, annotated
+694,803-cell dataset, CellChat found 291 significant ligand-receptor
+interactions across 19 signaling pathways. The full chain — QC → Harmony →
+cluster → annotate → CellChat — runs clean from raw data to results.
 
 ## Why this design
 

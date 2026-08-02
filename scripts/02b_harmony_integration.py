@@ -14,8 +14,11 @@ data -- Harmony has nothing to correct for in that case and running it anyway
 just adds ~minutes of harmonypy iteration for no effect. Point 03_cluster.py
 at the corrected embedding via --use-rep X_pca_harmony.
 
-NOT YET TEST-RUN as of this commit (see project memory) -- validate against
-tests/data/ (or a small real subset) before trusting output on a full-scale run.
+Validated on the real 907,696-cell full-scale run (2026-08-02): 24 donors,
+converged in 6 iterations. Pin harmonypy==0.0.10 in environment.yml --
+harmonypy 2.0.0 (conda's newest) returned a corrupted/ragged Z_corr array
+at this scale and crashed the obsm assignment below; see environment.yml's
+comment for the full story.
 
 Input: the PCA-ready .h5ad written by scripts/02_normalize_pca.py.
 

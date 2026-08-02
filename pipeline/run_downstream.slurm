@@ -17,13 +17,13 @@
 #   -> 06 export for CellChat (flat MTX/CSV, no live R<->Python bridge)
 #   -> 07 CellChat analysis (R)
 #
-# NONE of these steps have been test-run as of this commit (see project
-# memory) -- smoke-test against tests/data/ or a small real subset before
-# trusting output at full scale. Memory here is copied from
-# run_pipeline.slurm's proven 400gb/16cpu sizing as a starting guess, NOT a
-# validated number for this chain -- CellChat in particular has a different
-# (permutation-heavy, less matrix-heavy) resource profile and may need
-# re-tuning independently once actually run.
+# Validated end-to-end on the real full-scale run (2026-08-02): 907,696
+# cells post-QC -> Harmony -> 694,803 confidently-annotated cells (after
+# excluding Ambiguous clusters) -> CellChat found 291 significant L-R
+# interactions across 19 pathways. 400gb/16cpu is proven for steps 1-3;
+# CellChat itself (step 4) only needed ~300gb and completed in ~1.5h with
+# --workers=1 -- see the comment above the Rscript call below for why it's
+# forced to 1 rather than following cpus-per-task.
 #
 # Resources sized for a real, full-scale Parse run (~1M cells) -- resize
 # down for smaller/local-scale data.
@@ -100,10 +100,15 @@ python scripts/06_export_for_cellchat.py \
   --group-col cell_type_v2 \
   --exclude-ambiguous
 
+# --workers=1 deliberately, not $SLURM_CPUS_PER_TASK: future::multisession
+# spawns separate R processes that each get their own copy of CellChat's
+# large intermediate data (a ~7.2GiB dense matrix here) rather than sharing
+# it -- 8 workers OOM-killed a 128gb job at this cell count where 1 worker
+# completed fine in ~300gb. Confirmed on the real run, not a guess.
 Rscript scripts/07_cellchat_analysis.R \
   --input-dir="${OUT_DIR}/cellchat_input" \
   --output-dir="${OUT_DIR}/cellchat_results" \
-  --species=human \
-  --workers="${SLURM_CPUS_PER_TASK:-4}"
+  --species="${SPECIES}" \
+  --workers=1
 
 echo "=== Done. Final objects: ${OUT_DIR}/04b_annotated.h5ad, ${OUT_DIR}/cellchat_results/ ==="
