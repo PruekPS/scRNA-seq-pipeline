@@ -16,16 +16,23 @@ reports for each stage (QC, normalization/PCA, clustering, annotation, and
 a real-data validation run) are in [`docs/`](docs/), each with a real,
 computed comparison against an alternative method.
 
+**New to this pipeline?** [`docs/student_hpc_tutorial.html`](docs/student_hpc_tutorial.html)
+is a step-by-step guide to running it yourself on HiPerGator — no coding
+assistant required — written to teach the reasoning behind each stage, not
+just the commands.
+
 ## Status
 
-Core pipeline (QC → normalize/PCA → cluster → annotate) is built and
-validated against real Parse Evercode data — see
+Core pipeline (QC → normalize/PCA → cluster → annotate) is validated
+against real Parse Evercode data at full scale (~907,700 cells post-QC
+from the real ~987,600-cell dataset) on HiPerGator — see
 [`docs/real_data_deep_dive.html`](docs/real_data_deep_dive.html) for the
-50,000-cell real-subset validation run. A full-scale (~987,000-cell) run
-on HiPerGator is in progress. Harmony batch integration, a finer
-multi-species (human/mouse/canine) annotation step, and a CellChat
-cell-cell communication module have been added and are being validated
-against real data next — see `scripts/` below for what's stable vs. new.
+methodology (validated first on a 50,000-cell subset, then at full scale).
+Harmony batch integration and the finer, confidence-gated multi-species
+(human/mouse/canine) annotation step are validated at the same full scale.
+CellChat cell-cell communication is implemented and installs cleanly but
+is still being tuned for memory/parallelism at ~700,000-cell scale — see
+`scripts/07_cellchat_analysis.R` and `scripts/` below for what's stable vs. new.
 
 ## Why this design
 
