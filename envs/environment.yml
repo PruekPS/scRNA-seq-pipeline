@@ -35,7 +35,14 @@ dependencies:
   - umap-learn>=0.5.12
   - scikit-misc>=0.5
   - scrublet>=0.2.3
-  - harmonypy>=0.0.10
+  # Pinned exactly, not >=: harmonypy 2.0.0 (conda's newest) threw a shape
+  # error inside scanpy's harmony_integrate wrapper on the real 907,696-cell
+  # run -- Z_corr came back as a ragged/object-dtype (50,) array instead of
+  # a clean (907696, 50) float array, so `.T` was a no-op and obsm
+  # assignment failed. Reproduced on real data, not hypothetical. 0.0.10 is
+  # the well-established pre-rewrite version scanpy's wrapper was written
+  # against; downgrading to it fixed the run.
+  - harmonypy=0.0.10
   - matplotlib>=3.10
   - seaborn>=0.13
   - ipykernel

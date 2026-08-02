@@ -81,6 +81,18 @@ def main():
         )
     print(f"Integrating {adata.n_obs} cells across {n_batches} '{args.batch_key}' batches...")
 
+    try:
+        import importlib.metadata
+        hp_version = importlib.metadata.version("harmonypy")
+        if not hp_version.startswith("0.0."):
+            print(f"WARNING: harmonypy {hp_version} is installed, not the pinned 0.0.10 -- "
+                  f"harmonypy 2.0.0 was found on a real 907k-cell run to return a ragged/"
+                  f"object-dtype Z_corr array (shape (n_pcs,) instead of (n_cells, n_pcs)), "
+                  f"which crashes the obsm assignment below with a confusing anndata shape "
+                  f"error. If that happens, `conda install harmonypy=0.0.10` and retry.")
+    except Exception:
+        pass
+
     sce.pp.harmony_integrate(
         adata, key=args.batch_key,
         basis="X_pca", adjusted_basis="X_pca_harmony",
