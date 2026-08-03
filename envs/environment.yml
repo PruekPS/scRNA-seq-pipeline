@@ -72,6 +72,11 @@ dependencies:
   - bioconductor-biocneighbors>=1.24
   - r-circlize>=0.4
   - r-svglite>=2.1
+  # For scripts/11_pseudobulk_deseq2.R. bioconductor-complexheatmap is
+  # already listed above (added for CellChat) and is reused for the
+  # pseudobulk top-DE-gene heatmap -- no separate heatmap package needed.
+  # Confirmed available on bioconda; not yet installed/tested on HiPerGator.
+  - bioconductor-deseq2>=1.42
   # r-nmf deliberately NOT listed here: conda-forge/bioconda cap out at
   # NMF 0.21.0 (every build, every R version, confirmed via `conda search`)
   # but CellChat requires NMF >=0.23.0. Install it from CRAN instead --

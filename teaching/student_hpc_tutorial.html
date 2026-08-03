@@ -201,7 +201,7 @@ cd scRNA-seq-pipeline</code></pre>
     <table>
       <thead><tr><th>Path</th><th>What's in it</th></tr></thead>
       <tbody>
-        <tr><td class="mono">scripts/</td><td>The actual pipeline steps, numbered in run order (<code>00_</code> through <code>07_</code>). Each is a standalone command-line script with <code>--help</code>-style usage in its own docstring.</td></tr>
+        <tr><td class="mono">scripts/</td><td>The actual pipeline steps, numbered in run order (<code>00_</code> through <code>11_</code>). Each is a standalone command-line script with <code>--help</code>-style usage in its own docstring.</td></tr>
         <tr><td class="mono">pipeline/</td><td>SLURM driver scripts that chain multiple <code>scripts/*.py</code> steps into one HPC job.</td></tr>
         <tr><td class="mono">envs/</td><td><code>environment.yml</code> (the conda environment spec) and <code>install_r_extras.sh</code> (the extra installs conda alone can't do).</td></tr>
         <tr><td class="mono">docs/</td><td>Everything you're reading now, plus <code>pipeline_overview.html</code> (full architecture) and a deep-dive report per stage with real validation numbers.</td></tr>
@@ -342,6 +342,21 @@ python scripts/03_cluster.py --input 02b_harmony.h5ad --output 03b_clustered.h5a
   --group-col cell_type_v2 --exclude-ambiguous
 Rscript scripts/07_cellchat_analysis.R --input-dir=cellchat_input/ --output-dir=cellchat_results/ --species=human</code></pre>
     <p>CellChat infers likely signaling between your annotated cell types by looking for pairs of cell types where one expresses a ligand and the other expresses its matching receptor, at levels above what you'd expect by chance. The output "communication probability" is not a direct physical measurement — it's an inference from expression co-occurrence, so treat strong hits as hypotheses worth validating (e.g. by literature or a follow-up experiment), not as confirmed biology.</p>
+
+    <h3>08 / 09 — Trajectory &amp; fate mapping (PAGA, CytoTRACE, CellRank)</h3>
+    <pre><code>python scripts/08_trajectory_paga.py --input 04b_annotated.h5ad --output 08_paga.h5ad \
+  --plot-dir paga_plots/ --annotation-col cell_type_v2 --root-cluster HSPC
+python scripts/09_cellrank_fate_mapping.py --input 08_paga.h5ad --output 09_cellrank.h5ad \
+  --plot-dir cellrank_plots/ --annotation-col cell_type_v2 --n-states 8 --use-dpt-pseudotime</code></pre>
+    <p>If your question involves cells differentiating from one state into another (e.g. progenitors maturing into specific cell types), clustering alone can't show that — it only shows discrete groups, not order or direction. PAGA gives a coarse map of which cell types are plausibly connected; CellRank estimates each cell's probability of ending up in each "terminal" state, using CytoTRACE's transcriptional-diversity score (cells expressing more distinct genes tend to be less differentiated) rather than true RNA velocity, since that needs spliced/unspliced read counts this pipeline's standard input doesn't provide. <code>--root-cluster</code> matters a lot here — it sets the direction of the whole result, so pick it deliberately (the genuine least-differentiated population in your data), not by default. See <code>docs/trajectory_cellrank_overview.html</code> for the full reasoning and what your experimental design needs to look like for this to answer a real biological question.</p>
+
+    <h3>10 / 11 — Pseudobulk differential expression, volcano plot, heatmap</h3>
+    <pre><code>python scripts/10_pseudobulk_prep.py --input 04b_annotated.h5ad --output-dir pseudobulk/ \
+  --condition-col disease_status --sample-col sample --annotation-col cell_type_v2
+Rscript scripts/11_pseudobulk_deseq2.R --input-dir=pseudobulk/ --output-dir=pseudobulk_de/ \
+  --condition-a=disease --condition-b=healthy</code></pre>
+    <p>This is for comparing two groups (e.g. disease vs. healthy, treatment vs. control) rather than ranking markers within one dataset. Why not just run a differential expression test cell-by-cell? Because cells from the same biological replicate aren't independent samples — a per-cell test silently treats "3 donors, 3000 cells each" as 9000 independent data points, which inflates how significant a result looks. <strong>Pseudobulk</strong> fixes this: sum raw counts within each (sample, cell type, condition) group first, so each donor contributes exactly one data point per comparison, then run a real bulk RNA-seq method (DESeq2) on that. <code>--condition-col</code> is deliberately generic — point it at whatever comparison your real data actually has, there's no dataset-specific assumption baked in.</p>
+    <p>The output includes one <strong>volcano plot</strong> per cell type (each gene's fold-change on the x-axis, statistical confidence on the y-axis — genes that are both big-effect and high-confidence stand out in the corners) and one combined <strong>heatmap</strong> of the top differentially-expressed genes across every pseudo-sample, so you can see at a glance whether a given gene's pattern is consistent across cell types or specific to one. A cell type gets skipped automatically if either condition has fewer than 2 pseudo-samples — DESeq2 can't estimate variability from a single replicate, and reporting a p-value from a comparison that can't actually detect noise would be misleading, not just incomplete.</p>
   </section>
 
   <section id="slurm">

@@ -35,6 +35,15 @@ are all now validated end-to-end at full scale: on the real, annotated
 interactions across 19 signaling pathways. The full chain — QC → Harmony →
 cluster → annotate → CellChat — runs clean from raw data to results.
 
+Two further optional stages are built but not yet run against real data
+(no bundled dataset has a real trajectory or condition comparison to
+validate against): trajectory/fate mapping (PAGA + CytoTRACE + CellRank,
+deliberately no RNA velocity — see
+[`docs/trajectory_cellrank_overview.html`](docs/trajectory_cellrank_overview.html))
+and pseudobulk differential expression with DESeq2, volcano plots, and a
+top-DE-gene heatmap, dataset-agnostic by design (any `--condition-col`
+supplied at run time).
+
 ## Why this design
 
 - **Parse's split-pool barcoding** ([Rosenberg et al., *Science* 2018](https://doi.org/10.1126/science.aam8999))
@@ -63,9 +72,12 @@ teaching/              student-facing, no-assistant-required tutorial (student_h
 scripts/               00-04: core pipeline (load, QC, normalize/PCA, cluster, annotate)
                         02b/04b: optional Harmony integration / finer multi-species annotation
                         06-07: CellChat export (Python) + analysis (R)
-pipeline/               SLURM drivers (run_pipeline.slurm, run_downstream.slurm) +
+                        08-09: PAGA + diffusion pseudotime / CellRank fate mapping (no RNA velocity)
+                        10-11: pseudobulk aggregation (Python) + DESeq2 DE, volcano, heatmap (R)
+pipeline/               SLURM drivers (run_pipeline.slurm, run_downstream.slurm,
+                        run_trajectory.slurm, run_pseudobulk_de.slurm) +
                         pipeline/split-pipe/ (HiPerGator setup for Parse's CLI demux)
-envs/environment.yml    reproducible conda env spec (Python/scanpy + R/Seurat/CellChat stack)
+envs/environment.yml    reproducible conda env spec (Python/scanpy + R/Seurat/CellChat/DESeq2 stack)
 tests/                  smoke-test convention and gitignored real/public test data
 ```
 
