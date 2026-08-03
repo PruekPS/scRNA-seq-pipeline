@@ -47,6 +47,13 @@ dependencies:
   # the well-established pre-rewrite version scanpy's wrapper was written
   # against; downgrading to it fixed the run.
   - harmonypy=0.0.10
+  # For scripts/08_trajectory_paga.py + 09_cellrank_fate_mapping.py.
+  # cellrank pulls in pygpcca (the GPCCA estimator) automatically as a
+  # dependency; listed explicitly here anyway for visibility. NOT YET
+  # installed/tested on HiPerGator as of this addition -- confirm both
+  # resolve cleanly the same way harmonypy's version needed checking.
+  - cellrank>=2.3
+  - pygpcca>=1.0.4
   - matplotlib>=3.10
   - seaborn>=0.13
   - ipykernel

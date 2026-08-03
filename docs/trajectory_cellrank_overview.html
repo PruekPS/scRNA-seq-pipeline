@@ -1,0 +1,257 @@
+<title>Trajectory Inference &amp; Fate Mapping — Design, Method &amp; Sources</title>
+<style>
+  :root{
+    --bg: #f6f7f5;
+    --bg-raised: #ffffff;
+    --ink: #1a2320;
+    --ink-soft: #4b5750;
+    --line: #dde2dd;
+    --accent: #1f6f6b;
+    --accent-soft: #e3efed;
+    --accent-ink: #0f4744;
+    --amber: #9a6423;
+    --amber-soft: #f3e8d7;
+    --good: #2f7a3d;
+    --good-soft: #e5f2e6;
+    --shadow: 0 1px 2px rgba(20,30,25,0.06), 0 8px 24px -16px rgba(20,30,25,0.18);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg: #111513; --bg-raised: #171c19; --ink: #e6ebe6; --ink-soft: #a9b3ac;
+      --line: #2a322c; --accent: #57b8ab; --accent-soft: #1a2b28; --accent-ink: #8fd7cb;
+      --amber: #d3a05f; --amber-soft: #2c2318; --good: #7fcf8c; --good-soft: #16281a;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -16px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: #111513; --bg-raised: #171c19; --ink: #e6ebe6; --ink-soft: #a9b3ac;
+    --line: #2a322c; --accent: #57b8ab; --accent-soft: #1a2b28; --accent-ink: #8fd7cb;
+    --amber: #d3a05f; --amber-soft: #2c2318; --good: #7fcf8c; --good-soft: #16281a;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -16px rgba(0,0,0,0.5);
+  }
+  :root[data-theme="light"]{
+    --bg: #f6f7f5; --bg-raised: #ffffff; --ink: #1a2320; --ink-soft: #4b5750;
+    --line: #dde2dd; --accent: #1f6f6b; --accent-soft: #e3efed; --accent-ink: #0f4744;
+    --amber: #9a6423; --amber-soft: #f3e8d7; --good: #2f7a3d; --good-soft: #e5f2e6;
+    --shadow: 0 1px 2px rgba(20,30,25,0.06), 0 8px 24px -16px rgba(20,30,25,0.18);
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "Palatino Linotype", "Iowan Old Style", Georgia, serif;
+    line-height: 1.6;
+  }
+  .sans{ font-family: -apple-system, "Segoe UI", sans-serif; }
+  code, .mono{ font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.88em; }
+  .shell{ max-width: 900px; margin: 0 auto; padding: 0 24px 96px; }
+  header.masthead{ padding: 56px 0 28px; border-bottom: 1px solid var(--line); margin-bottom: 40px; }
+  .eyebrow{
+    font-family: -apple-system, sans-serif; text-transform: uppercase; letter-spacing: 0.11em;
+    font-size: 0.72rem; color: var(--accent-ink); font-weight: 600; margin: 0 0 14px;
+  }
+  h1{ font-size: clamp(1.7rem, 4vw, 2.3rem); line-height: 1.15; margin: 0 0 12px; text-wrap: balance; font-weight: 600; }
+  .dek{ font-family: -apple-system, sans-serif; color: var(--ink-soft); font-size: 1.05rem; max-width: 66ch; margin: 0 0 22px; }
+  .statusrow{ display:flex; flex-wrap:wrap; gap:8px; }
+  .pill{
+    font-family: -apple-system, sans-serif; font-size: 0.76rem; font-weight: 600;
+    padding: 5px 11px; border-radius: 100px; background: var(--accent-soft); color: var(--accent-ink);
+  }
+  .pill.warn{ background: var(--amber-soft); color: var(--amber); }
+  nav.toc{
+    font-family: -apple-system, sans-serif; font-size: 0.85rem; display: flex; flex-wrap: wrap;
+    gap: 4px 18px; margin: 22px 0 0; padding: 0;
+  }
+  nav.toc a{ color: var(--ink-soft); text-decoration: none; border-bottom: 1px solid transparent; }
+  nav.toc a:hover{ color: var(--accent-ink); border-bottom-color: var(--accent); }
+  section{ margin: 0 0 56px; }
+  section > .stage-label{
+    font-family: -apple-system, sans-serif; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--accent-ink); margin: 0 0 8px;
+  }
+  h2{ font-size: 1.4rem; margin: 0 0 16px; font-weight: 600; text-wrap: balance; }
+  h3{ font-size: 1.05rem; font-weight: 600; margin: 28px 0 10px; }
+  p{ margin: 0 0 14px; max-width: 74ch; }
+  ul, ol{ margin: 0 0 14px; padding-left: 22px; }
+  li{ margin-bottom: 6px; max-width: 70ch; }
+  a{ color: var(--accent-ink); }
+  .callout{
+    background: var(--bg-raised); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 20px; box-shadow: var(--shadow); margin: 18px 0;
+  }
+  .callout.warn{ border-left: 3px solid var(--amber); }
+  .callout.good{ border-left: 3px solid var(--good); }
+  .callout .label{
+    font-family: -apple-system, sans-serif; font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; margin: 0 0 6px;
+  }
+  .callout.warn .label{ color: var(--amber); }
+  .callout.good .label{ color: var(--good); }
+  .callout p:last-child{ margin-bottom: 0; }
+  table{ width: 100%; border-collapse: collapse; margin: 8px 0 20px; font-size: 0.92rem; }
+  thead th{
+    font-family: -apple-system, sans-serif; text-align: left; font-size: 0.72rem; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--ink-soft); font-weight: 600; padding: 0 12px 8px 0; border-bottom: 1px solid var(--line);
+  }
+  tbody td{ padding: 10px 12px 10px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td{ border-bottom: none; }
+  .wrap-table{ overflow-x: auto; }
+  pre{
+    background: #f0f2ee; border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; margin: 12px 0 18px;
+  }
+  @media (prefers-color-scheme: dark){ pre{ background: #14201c; } }
+  :root[data-theme="dark"] pre{ background: #14201c; }
+  :root[data-theme="light"] pre{ background: #f0f2ee; }
+  pre code{ background: none; padding: 0; font-size: 0.85rem; line-height: 1.55; }
+  .refs{ font-size: 0.9rem; }
+  .refs li{ margin-bottom: 12px; }
+  .refs .num{ font-weight: 700; color: var(--accent-ink); margin-right: 4px; }
+  footer{
+    font-family: -apple-system, sans-serif; color: var(--ink-soft); font-size: 0.82rem;
+    border-top: 1px solid var(--line); padding-top: 18px; margin-top: 40px;
+  }
+</style>
+
+<div class="shell">
+
+  <header class="masthead">
+    <p class="eyebrow">Trajectory &amp; fate mapping &middot; companion to pipeline_overview.html</p>
+    <h1>Trajectory Inference &amp; Fate Mapping — Design, Method &amp; Sources</h1>
+    <p class="dek">Scoped toward one specific question: tracking differentiation from bone-marrow progenitors through to mature immune cells infiltrating the tumor microenvironment (TME), in pooled Evercode samples spanning both compartments. Covers the experimental design this analysis actually needs, the method (PAGA + CytoTRACE + CellRank, no RNA velocity), and the pipeline steps that implement it.</p>
+    <div class="statusrow">
+      <span class="pill warn">Design &amp; method doc — not a validated-results report</span>
+      <span class="pill">No RNA velocity (yet)</span>
+      <span class="pill">scripts/08 + 09, built 2026-08-02</span>
+    </div>
+    <nav class="toc">
+      <a href="#motivation">Motivation</a>
+      <a href="#design">Experimental design</a>
+      <a href="#method">Method</a>
+      <a href="#pipeline">Pipeline steps</a>
+      <a href="#velocity">Why not RNA velocity yet</a>
+      <a href="#caveats">Caveats</a>
+      <a href="#refs">References</a>
+    </nav>
+  </header>
+
+  <div class="callout warn">
+    <p class="label">Read this first</p>
+    <p>Unlike the other <code>docs/*_deep_dive.html</code> reports in this repo, this document does not contain results from a real run — no bone-marrow+TME dataset exists yet to run it against. It documents the method, the code (<code>scripts/08_trajectory_paga.py</code>, <code>scripts/09_cellrank_fate_mapping.py</code>), and what the experiment needs to look like for the analysis to produce a meaningful answer. Treat every number in the "experimental design" section as general, adaptable guidance, not a fixed requirement — refine it once your actual cohort is defined.</p>
+  </div>
+
+  <section id="motivation">
+    <p class="stage-label">Motivation</p>
+    <h2>Why this needs trajectory tools, not just clustering</h2>
+    <p>The core pipeline (QC → normalize → cluster → annotate) answers "what cell types are present." It doesn't answer "which cells are becoming which other cells, and how far along that process are they." Tracking bone-marrow-derived progenitors as they differentiate into mature immune cells infiltrating a tumor is fundamentally a question about <em>ordering and direction</em> — exactly what clustering discards and trajectory/fate-mapping methods are built to recover.</p>
+    <p>There's real precedent for this specific biological question: a pan-cancer single-cell atlas of tumor-infiltrating myeloid cells modeled monocyte-to-tumor-associated-macrophage differentiation trajectories across multiple cancer types and found consistent, reproducible transcriptional trajectories despite substantial inter-patient and inter-cancer-type heterogeneity<sup><a href="#ref5">5</a></sup> — useful prior art for both what the trajectory should look like biologically and how much patient variability to expect.</p>
+  </section>
+
+  <section id="design">
+    <p class="stage-label">Experimental design</p>
+    <h2>What the data needs to look like for this to work</h2>
+
+    <h3>Paired compartments, not just more cells</h3>
+    <p>No trajectory or fate-mapping method invents biological anchors that aren't in the data. To recover a bone-marrow-to-TME trajectory, the pooled Evercode run needs cells sampled from <strong>both ends of the process, ideally from the same subjects</strong>:</p>
+    <ul>
+      <li><strong>Bone marrow</strong> (aspirate/biopsy) — the progenitor/HSPC-containing compartment, needed as the trajectory's root.</li>
+      <li><strong>Tumor tissue</strong> (or TME-proximal tissue) — the terminal/mature-state compartment.</li>
+      <li><strong>Peripheral blood</strong>, if feasible, is a valuable intermediate — many myeloid trajectories transit through a circulating monocyte state between bone marrow and tissue infiltration, and having that intermediate sampled directly (rather than only inferred) makes the trajectory much easier to validate.</li>
+    </ul>
+    <p>Whichever compartments are included, each cell's tissue-of-origin needs to survive as a real metadata column all the way through the pipeline — <code>scripts/00_load_parse_output.py</code> already preserves whatever columns exist in <code>cell_metadata.csv</code> (this is how the existing <code>sample</code>/donor column survives), so a <code>compartment</code> (or similarly named) column with values like <code>bone_marrow</code> / <code>blood</code> / <code>tumor</code> will carry through automatically as long as it's present in the Evercode metadata from the start. This has to be planned into the sub-library/well design before sequencing, not recovered afterward.</p>
+
+    <h3>How many subjects/replicates</h3>
+    <p>There's no single correct number — it depends on effect size and the inter-patient heterogeneity in the specific cancer type, which this pipeline can't estimate in advance. As general orientation, not a requirement:</p>
+    <ul>
+      <li>Single-lab scRNA-seq studies comparing groups/conditions commonly use somewhere in the range of <strong>3–6 biological replicates per group</strong> as a practical minimum for a first pass — enough to see whether a pattern is consistent across individuals rather than being one person's idiosyncrasy, without requiring cohort-study-scale recruitment.</li>
+      <li>Trajectory-specific work benefits from <em>more</em> than that where possible, because the most informative cells — those actually mid-transition — are typically the rarest population in the data. A design that's adequately powered for cluster-level comparisons can still under-sample the transitional states that make a trajectory result credible.</li>
+      <li>The reference pan-cancer myeloid study above pooled data across a much larger number of patients and multiple cancer types (a meta-analysis-scale atlas, not a single-lab experiment) — useful for showing what a well-powered version of this question looks like, not a target to match for a first pooled Evercode run.</li>
+    </ul>
+    <p>Practical recommendation: treat the first pooled run as a pilot. Confirm the trajectory looks biologically sane (root cluster genuinely progenitor-like, terminal states genuinely mature/TME-associated, fate probabilities vary smoothly rather than looking like noise) before committing to a larger cohort sized around a specific effect you're trying to detect.</p>
+
+    <h3>Integration strategy needs to change for this specific analysis</h3>
+    <div class="callout warn">
+      <p class="label">Don't Harmony-integrate away the signal you're studying</p>
+      <p><code>scripts/02b_harmony_integration.py</code> defaults to <code>--batch-key sample</code> (donor), which is the right call for the core pipeline's QC→cluster→annotate path. For trajectory analysis across bone-marrow and tumor compartments specifically, <strong>do not</strong> also integrate across <code>compartment</code> the same way — that would actively erase the biological signal this whole analysis exists to find. Keep Harmony scoped to donor-level batch correction only; let compartment-driven differences remain in the embedding, since that's the trajectory.</p>
+    </div>
+  </section>
+
+  <section id="method">
+    <p class="stage-label">Method</p>
+    <h2>PAGA, CytoTRACE, and CellRank — what each one actually computes</h2>
+
+    <h3>PAGA — coarse connectivity graph</h3>
+    <p>PAGA<sup><a href="#ref1">1</a></sup> builds a graph where each node is a cluster/cell-type and each edge weight reflects how well-connected two populations are in the underlying neighbor graph. It's a summary of which transitions are <em>plausible</em> given the data's structure — not a directed trajectory by itself, and not proof that a transition actually happens. Cheap to compute directly on the existing Harmony-corrected, clustered, annotated object; no new data required.</p>
+
+    <h3>CytoTRACE — differentiation potential from transcriptional diversity</h3>
+    <p>CytoTRACE<sup><a href="#ref2">2</a></sup>'s core finding: the number of distinct genes expressed per cell correlates with how undifferentiated that cell is — stem/progenitor cells tend to express a broader, more diverse gene repertoire than terminally differentiated cells. This gives a per-cell "developmental potential" score without needing spliced/unspliced counts, real time-course sampling, or lineage tracing. CellRank 2 reimplements this algorithm directly in Python (<code>cellrank.kernels.CytoTRACEKernel</code>) — no separate R package, no extra dependency beyond CellRank itself.</p>
+
+    <h3>CellRank 2 — kernels, GPCCA, and fate probabilities</h3>
+    <p>CellRank 2<sup><a href="#ref3">3</a></sup> (code: <a href="https://github.com/theislab/cellrank" target="_blank" rel="noopener">github.com/theislab/cellrank</a>; what's new vs. v1: <a href="https://cellrank.readthedocs.io/en/latest/about/version2.html" target="_blank" rel="noopener">cellrank.readthedocs.io/en/latest/about/version2.html</a>) separates trajectory inference into two independent pieces:</p>
+    <ul>
+      <li><strong>Kernels</strong> compute a cell-cell transition matrix from some data modality. CellRank 2 supports six: <code>VelocityKernel</code>, <code>ConnectivityKernel</code>, <code>PseudotimeKernel</code>, <code>CytoTRACEKernel</code>, <code>RealTimeKernel</code>, and <code>PrecomputedKernel</code>. This pipeline uses <code>CytoTRACEKernel</code> (directs the graph by differentiation potential) combined with <code>ConnectivityKernel</code> (stabilizes it against noise) and, optionally, <code>PseudotimeKernel</code> fed by <code>scripts/08_trajectory_paga.py</code>'s diffusion pseudotime — combined via CellRank's documented weighted-sum kernel arithmetic (e.g. <code>0.7 * ctk + 0.3 * ck</code>).</li>
+      <li><strong>Estimators</strong> analyze the transition matrix. <strong>GPCCA</strong> (Generalized Perron Cluster Cluster Analysis) is CellRank's recommended estimator: it computes coarse-grained "macrostates," automatically classifies some as <em>initial</em> and <em>terminal</em> states, and computes each cell's <strong>fate probability</strong> — the likelihood of eventually reaching each terminal state — plus <strong>lineage driver genes</strong>, the genes most correlated with progress toward a given fate.</li>
+    </ul>
+    <p>Verified against CellRank's own current API documentation and tutorial notebooks before writing any code (not from memory alone) — the real, current workflow is <code>compute_schur()</code> → <code>compute_macrostates(n_states, cluster_key)</code> → <code>predict_terminal_states()</code> / <code>predict_initial_states()</code> → <code>compute_fate_probabilities()</code> → <code>compute_lineage_drivers()</code>. (CellRank's older <code>.fit()</code> convenience method still appears in some quick-start examples but is marked deprecated in the current API reference — this pipeline uses the granular, current calls.)</p>
+  </section>
+
+  <section id="pipeline">
+    <p class="stage-label">Pipeline steps</p>
+    <h2><code>scripts/08_trajectory_paga.py</code> + <code>09_cellrank_fate_mapping.py</code></h2>
+    <p>Both are optional steps after the core pipeline (QC → normalize → Harmony → cluster → <code>04b</code> annotation). Neither requires new raw data.</p>
+
+    <h3>08 — PAGA + diffusion pseudotime</h3>
+    <pre><code>python scripts/08_trajectory_paga.py --input 04b_annotated.h5ad --output 08_paga.h5ad \
+    --plot-dir paga_plots/ --annotation-col cell_type_v2 --root-cluster HSPC</code></pre>
+    <p><code>--root-cluster</code> is required and consequential: diffusion pseudotime measures distance <em>from</em> this population, so it sets the direction of every downstream result. Point it at whichever <code>04b_better_annotation.py</code> label is the genuine progenitor population (its 12-category dictionary already includes an <code>HSPC</code> category for exactly this). The specific root <em>cell</em> within that cluster is auto-selected by a documented heuristic (most extreme value along the first diffusion component) — override with <code>--root-cell-index</code> if a better candidate is known.</p>
+
+    <h3>09 — CellRank fate mapping</h3>
+    <pre><code>python scripts/09_cellrank_fate_mapping.py --input 08_paga.h5ad --output 09_cellrank.h5ad \
+    --plot-dir cellrank_plots/ --drivers-csv lineage_drivers.csv \
+    --annotation-col cell_type_v2 --n-states 8 --use-dpt-pseudotime</code></pre>
+    <p><code>--n-states</code> should comfortably exceed the number of distinct initial+terminal populations you actually expect — GPCCA needs headroom to find the real structure; too few states forces distinct biology to collapse together. Inspect <code>cellrank_plots/eigenvalue_spectrum.png</code> (a real eigenvalue gap indicates a natural number of states) rather than trusting the default blindly.</p>
+    <p>Outputs: fate-probability UMAPs, a circular projection of fate probabilities per cell type, the coarse-grained macrostate transition matrix, and a CSV of lineage driver genes per terminal state — plus the fitted GPCCA estimator itself (<code>*.gpcca.pickle</code>, via CellRank's own <code>write()</code>/<code>read()</code> serialization) so later plotting or reporting doesn't require recomputing the Schur decomposition and macrostates from scratch.</p>
+
+    <h3>HPC</h3>
+    <p><code>pipeline/run_trajectory.slurm</code> chains both steps, run after <code>run_pipeline.slurm</code>/<code>run_downstream.slurm</code> have already produced an annotated object:</p>
+    <pre><code>sbatch --account=&lt;your-account&gt; --qos=&lt;your-qos&gt; \
+  --output=/path/to/logs/scrna-trajectory-%j.out \
+  pipeline/run_trajectory.slurm /path/to/OUT_DIR cell_type_v2 HSPC 8</code></pre>
+  </section>
+
+  <section id="velocity">
+    <p class="stage-label">Scope decision</p>
+    <h2>Why not RNA velocity (yet)</h2>
+    <p>True RNA velocity<sup><a href="#ref4">4</a></sup> compares spliced vs. unspliced transcript ratios to predict the near-term direction of each cell's expression change — a genuinely different, more direct signal than CytoTRACE's static differentiation-potential heuristic. It's not included here for a concrete reason: <strong>standard Parse <code>split-pipe</code>/Trailmaker gene-count output does not separate spliced from unspliced reads.</strong> Getting real velocity would mean reprocessing raw FASTQs through a velocity-aware aligner (e.g. STARsolo's Velocyto mode) — a raw-data pipeline change, not a downstream script addition, and <strong>not yet confirmed</strong> whether the current <code>split-pipe</code> version even supports producing velocity-compatible output. That needs checking against Parse's current documentation before it's worth committing to.</p>
+    <p>CytoTRACE + PAGA + CellRank gets real directional/fate information now, from data this pipeline already produces, while that question stays open. If real velocity is added later, <code>cellrank.kernels.VelocityKernel</code> slots into the same CellRank/GPCCA workflow already built here — the estimator and downstream analysis code wouldn't need to change, only the kernel.</p>
+  </section>
+
+  <section id="caveats">
+    <p class="stage-label">Caveats</p>
+    <h2>What this analysis can and can't claim</h2>
+    <ul>
+      <li><strong>Inference from a single snapshot, not lineage tracing.</strong> Nothing here follows an actual cell over time. Fate probabilities are statistical inferences from the geometry of a single time-point's transcriptomes — treat them as hypotheses about likely trajectories, not observed lineages.</li>
+      <li><strong>CytoTRACE and pseudotime both assume a roughly monotonic differentiation process.</strong> Immune cell states aren't always unidirectional — macrophage polarization and some myeloid states show real plasticity that a pseudotime-style ordering can misrepresent as strictly one-way.</li>
+      <li><strong>The root-cluster choice is a modeling decision, not a measurement.</strong> Every downstream diffusion-pseudotime and CytoTRACE-direction result is conditioned on which population was designated the root and, within it, which single cell was auto-selected — a heuristic, documented as such in <code>scripts/08_trajectory_paga.py</code>, not a certainty.</li>
+      <li><strong>The number of macrostates (<code>--n-states</code>) is a hyperparameter requiring inspection</strong>, not a ground truth — check the eigenvalue spectrum plot before trusting a specific terminal-state count.</li>
+      <li><strong>The compartment-crossing claim only means something with real paired compartment data</strong> — see <a href="#design">Experimental design</a>. Run against single-compartment data and the "trajectory" is really just describing within-compartment heterogeneity, not bone-marrow-to-TME differentiation.</li>
+    </ul>
+  </section>
+
+  <section id="refs">
+    <p class="stage-label">References</p>
+    <h2>Cited sources</h2>
+    <ol class="refs">
+      <li id="ref1"><span class="num">1.</span>Wolf FA, Hamey FK, Plass M, Solana J, Dahlin JS, Göttgens B, Rajewsky N, Simon L, Theis FJ. PAGA: graph abstraction reconciles clustering with trajectory inference through a topology preserving map of single cells. <em>Genome Biology</em>. 2019;20:59. doi:<a href="https://doi.org/10.1186/s13059-019-1663-x" target="_blank" rel="noopener">10.1186/s13059-019-1663-x</a></li>
+      <li id="ref2"><span class="num">2.</span>Gulati GS, Sikandar SS, Wesche DJ, Manjunath A, Bharadwaj A, Berger MJ, Ilagan F, Kuo AH, Hsieh RW, Cai S, Zabala M, Scheeren FA, Lobo NA, Qian D, Yu FB, Dirbas FM, Clarke MF, Newman AM. Single-cell transcriptional diversity is a hallmark of developmental potential. <em>Science</em>. 2020;367(6476):405&ndash;411. doi:<a href="https://doi.org/10.1126/science.aax0249" target="_blank" rel="noopener">10.1126/science.aax0249</a></li>
+      <li id="ref3"><span class="num">3.</span>Weiler P, Lange M, Klein M, Pe'er D, Theis F. CellRank 2: unified fate mapping in multiview single-cell data. <em>Nature Methods</em>. 2024;21:1196&ndash;1205. doi:<a href="https://doi.org/10.1038/s41592-024-02303-9" target="_blank" rel="noopener">10.1038/s41592-024-02303-9</a> &middot; code: <a href="https://github.com/theislab/cellrank" target="_blank" rel="noopener">github.com/theislab/cellrank</a> &middot; docs: <a href="https://cellrank.readthedocs.io/en/latest/about/version2.html" target="_blank" rel="noopener">cellrank.readthedocs.io</a></li>
+      <li id="ref4"><span class="num">4.</span>La Manno G, Soldatov R, Zeisel A, et al. RNA velocity of single cells. <em>Nature</em>. 2018;560(7719):494&ndash;498. doi:<a href="https://doi.org/10.1038/s41586-018-0414-6" target="_blank" rel="noopener">10.1038/s41586-018-0414-6</a> (cited for context on what true velocity would add — not implemented in this pipeline yet, see <a href="#velocity">above</a>)</li>
+      <li id="ref5"><span class="num">5.</span>Cheng S, Li Z, Gao R, Xing B, Gao Y, Yang Y, Qin S, Zhang L, Ouyang H, Du P, Jiang L, Zhang B, Yang Y, Wang X, Ren X, Bei JX, Hu X, Bu Z, Ji J, Zhang Z. A pan-cancer single-cell transcriptional atlas of tumor infiltrating myeloid cells. <em>Cell</em>. 2021;184(3):792&ndash;809.e23. doi:<a href="https://doi.org/10.1016/j.cell.2021.01.010" target="_blank" rel="noopener">10.1016/j.cell.2021.01.010</a></li>
+    </ol>
+  </section>
+
+  <footer>
+    <p>Part of the <a href="pipeline_overview.html">scRNA-seq Analysis Pipeline</a> documentation set — see its "Suggested next steps" section for how this fits alongside Harmony and CellChat. Code: <code>scripts/08_trajectory_paga.py</code>, <code>scripts/09_cellrank_fate_mapping.py</code>, <code>pipeline/run_trajectory.slurm</code>.</p>
+  </footer>
+
+</div>
