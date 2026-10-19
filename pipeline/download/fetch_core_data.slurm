@@ -76,7 +76,11 @@ if (( ${#SUMS[@]} )); then
   for s in "${SUMS[@]}"; do
     echo "checking ${s}"
     tool=md5sum; [[ "${s,,}" == *sha256* ]] && tool=sha256sum
-    ( cd "$(dirname "${s}")" && "${tool}" -c --quiet "$(basename "${s}")" )
+    # Drop any line checksumming the checksum file itself (UMN's md5.txt
+    # lists itself; that line can never match and isn't data).
+    ( cd "$(dirname "${s}")" && b="$(basename "${s}")" \
+      && awk -v self="${b}" '{f = $2; sub(/^\*/, "", f)} f != self && f != "./" self' "${b}" \
+      | "${tool}" -c --quiet - )
   done
 else
   echo "no core checksum files found -- skipping md5 verification"
