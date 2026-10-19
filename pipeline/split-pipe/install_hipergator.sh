@@ -12,7 +12,8 @@
 # release, not this one), then `pip install .` (build isolation pulls in
 # Cython/numpy itself via pyproject.toml, so no --no-build-isolation flag).
 #
-# Usage: SPLITPIPE_PROJECT_ROOT=/blue/<group>/<user> bash install_hipergator.sh /path/to/ParseBiosciences-Pipeline.<version>.zip
+# Usage: SPLITPIPE_PROJECT_ROOT=/blue/<group>/<user> bash install_hipergator.sh /path/to/ParseBiosciences-Pipeline.<version>.zip [immune]
+#   Pass "immune" as the second argument for Evercode TCR/BCR data.
 set -euo pipefail
 
 PROJECT_ROOT="${SPLITPIPE_PROJECT_ROOT:?Set SPLITPIPE_PROJECT_ROOT to your /blue/<group>/<user> path}"
@@ -20,7 +21,8 @@ SOFTWARE_DIR="${PROJECT_ROOT}/software/split-pipe"
 ENV_NAME="splitpipe"
 PY_VERSION="3.12.8"   # exact version Parse's own install docs test against (setup.py requires >=3.12.8)
 
-PIPELINE_ZIP="${1:?Usage: $0 /path/to/ParseBiosciences-Pipeline.<version>.zip}"
+PIPELINE_ZIP="${1:?Usage: $0 /path/to/ParseBiosciences-Pipeline.<version>.zip [immune]}"
+WITH_IMMUNE="${2:-}"
 
 if [[ "${PIPELINE_ZIP}" != "${PROJECT_ROOT}"* ]]; then
   echo "Refusing to run: pipeline zip must live under ${PROJECT_ROOT}" >&2
@@ -56,11 +58,15 @@ cd "${PIPELINE_DIR}"
 #   conda tos accept --override-channels --channel conda-forge
 bash ./install_dependencies_conda.sh -i -y
 
+# BCR/TCR (Evercode TCR/BCR kits): the IgBlast databases land in
+# ./splitpipe/immune_dir/, which setup.py packages as package_data -- so per
+# Parse's README they must be installed BEFORE `pip install .`, not after.
+if [[ "${WITH_IMMUNE}" == "immune" ]]; then
+  bash ./install_immune_dbs.sh -i -y
+  bash ./install_immune_dbs.sh -c -y
+fi
+
 pip install . --no-cache-dir
 
 echo "Done. Activate with: conda activate ${ENV_NAME}"
 echo "Verify with: conda run -n ${ENV_NAME} split-pipe --version"
-echo ""
-echo "For BCR/TCR immune analysis, also run (inside the ${ENV_NAME} env, from"
-echo "${PIPELINE_DIR}):"
-echo "  bash install_immune_dbs.sh -i -y"

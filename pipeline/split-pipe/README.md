@@ -41,7 +41,8 @@ system-wide installs, no shared/other-user paths.
 ssh <your-hipergator-alias>
 cd /blue/<group>/<user>
 bash scRNA-pipeline/pipeline/split-pipe/install_hipergator.sh \
-     /blue/<group>/<user>/software/split-pipe/ParseBiosciences-Pipeline.<version>.zip
+     /blue/<group>/<user>/software/split-pipe/ParseBiosciences-Pipeline.<version>.zip \
+     immune   # optional: only for Evercode TCR/BCR data
 ```
 
 See [`install_hipergator.sh`](install_hipergator.sh) — it creates a dedicated
@@ -53,8 +54,12 @@ version), then `pip install .`, all scoped to your project root (set via the
 first time this HiPerGator account has used conda's default/conda-forge
 channels non-interactively, `install_dependencies_conda.sh` can fail with
 `CondaToSNonInteractiveError` — the script's own comments show the one-time
-`conda tos accept` fix. For BCR/TCR work, also run `install_immune_dbs.sh`
-(see the script's own echo'd instructions at the end).
+`conda tos accept` fix. For BCR/TCR work (Evercode TCR/BCR kits), pass
+`immune` as a second argument: the script then runs Parse's
+`install_immune_dbs.sh` **before** `pip install .`, since the IgBlast
+databases it writes into `splitpipe/immune_dir/` are packaged at pip-install
+time — running it afterwards (as older notes here suggested) leaves the
+installed package without them.
 
 ## Running it
 
