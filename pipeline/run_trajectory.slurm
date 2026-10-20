@@ -39,7 +39,7 @@
 set -euo pipefail
 
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
-ENV_NAME="scrna"
+ENV_NAME="scrna-traj"   # separate python-3.12 env, see envs/environment_trajectory.yml
 
 OUT_DIR="${1:?Usage: sbatch run_trajectory.slurm /path/to/OUT_DIR [annotation_col] [root_cluster] [n_states]}"
 ANNOTATION_COL="${2:-cell_type_v2}"

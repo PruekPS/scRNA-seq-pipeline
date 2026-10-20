@@ -47,13 +47,19 @@ dependencies:
   # the well-established pre-rewrite version scanpy's wrapper was written
   # against; downgrading to it fixed the run.
   - harmonypy=0.0.10
-  # For scripts/08_trajectory_paga.py + 09_cellrank_fate_mapping.py.
-  # cellrank pulls in pygpcca (the GPCCA estimator) automatically as a
-  # dependency; listed explicitly here anyway for visibility. NOT YET
-  # installed/tested on HiPerGator as of this addition -- confirm both
-  # resolve cleanly the same way harmonypy's version needed checking.
-  - cellrank>=2.3
-  - pygpcca>=1.0.4
+  # For scripts/12_tcr_attach.py + 13_tcr_analysis.py (Evercode TCR). scirpy
+  # 0.22.5 solves cleanly with this env's scanpy 1.11.5 / anndata 0.12.19 /
+  # numpy 2.4 on python 3.11 (checked 2026-10-19). setuptools<81 is
+  # load-bearing: scirpy's dependency `airr` still imports pkg_resources,
+  # which setuptools >=81 removed -- without the pin `import scirpy` works but
+  # reading any AIRR file fails with "No module named 'pkg_resources'".
+  - scirpy=0.22
+  - setuptools<81
+  # cellrank/pygpcca (scripts 08/09) are deliberately NOT here: cellrank>=2.3
+  # needs python>=3.12, this env is python 3.11, and the solver refuses the
+  # combination (confirmed on HiPerGator 2026-10-19). They live in the
+  # separate envs/environment_trajectory.yml (env name `scrna-traj`), built
+  # together with DESeq2 by envs/install_trajectory_de.slurm.
   - matplotlib>=3.10
   - seaborn>=0.13
   - ipykernel

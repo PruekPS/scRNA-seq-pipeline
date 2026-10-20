@@ -13,6 +13,14 @@ Dataset-agnostic by design: --condition-col takes any adata.obs column
 name at run time (e.g. "disease_status", "treatment", "timepoint") --
 nothing here is specific to any one dataset or comparison.
 
+Different experiments need different DE designs (unpaired groups, paired
+before/after within a patient, a known processing batch, ...). Any
+SAMPLE-LEVEL column named in --covariate-cols (e.g. "patient", "batch") is
+carried into pseudobulk_metadata.csv so scripts/11 can put it in the DESeq2
+design (--covariates there). A covariate must be constant within each
+sample -- per-cell quantities (e.g. a sublibrary tag that mixes cells of
+one sample) can't be a pseudobulk covariate and are rejected.
+
 Each pseudo-sample = one (sample, cell_type, condition) combination,
 summed from raw counts (not log-normalized data -- DESeq2 models raw
 counts directly, that's the whole point of using it over a per-cell test).
@@ -43,13 +51,17 @@ import scipy.io as sio
 import scipy.sparse as sp
 
 
-def aggregate_pseudobulk(adata, sample_col, annotation_col, condition_col, counts_layer, min_cells):
+def aggregate_pseudobulk(adata, sample_col, annotation_col, condition_col, counts_layer, min_cells,
+                         covariate_cols=()):
     counts = adata.layers[counts_layer]
     if not sp.issparse(counts):
         counts = sp.csr_matrix(counts)
 
     group_cols = [sample_col, annotation_col, condition_col]
     groups = adata.obs.groupby(group_cols, observed=True).indices
+
+    sample_covs = (adata.obs.groupby(sample_col, observed=True)[list(covariate_cols)].first()
+                   if covariate_cols else None)
 
     pseudo_counts = []
     meta_rows = []
@@ -66,6 +78,7 @@ def aggregate_pseudobulk(adata, sample_col, annotation_col, condition_col, count
             "cell_type": celltype_val,
             "condition": condition_val,
             "n_cells_aggregated": n_cells,
+            **({c: sample_covs.loc[sample_val, c] for c in covariate_cols} if covariate_cols else {}),
         })
 
     if not meta_rows:
@@ -98,13 +111,28 @@ def main():
     parser.add_argument("--min-cells-per-group", type=int, default=10, dest="min_cells",
                          help="Minimum cells required to keep a (sample, cell_type, condition) "
                               "pseudo-sample (default: 10 -- a pseudobulk of fewer cells is unreliable)")
+    parser.add_argument("--covariate-cols", default="", dest="covariate_cols",
+                         help="Comma-separated SAMPLE-LEVEL adata.obs columns to carry into the metadata for "
+                              "use as DESeq2 covariates in script 11 (e.g. 'patient' for a paired design, "
+                              "'batch'). Default: none.")
     args = parser.parse_args()
+    covariate_cols = [c.strip() for c in args.covariate_cols.split(",") if c.strip()]
 
     adata = sc.read_h5ad(args.input)
 
     for col in (args.sample_col, args.annotation_col, args.condition_col):
         if col not in adata.obs:
             raise SystemExit(f"'{col}' not in adata.obs (available: {list(adata.obs.columns)})")
+    for col in covariate_cols:
+        if col not in adata.obs:
+            raise SystemExit(f"--covariate-cols '{col}' not in adata.obs (available: {list(adata.obs.columns)})")
+        if col in (args.sample_col, args.annotation_col, args.condition_col):
+            raise SystemExit(f"--covariate-cols '{col}' is already the sample/annotation/condition column")
+        varies = adata.obs.groupby(args.sample_col, observed=True)[col].nunique()
+        if (varies > 1).any():
+            raise SystemExit(f"--covariate-cols '{col}' is not constant within samples "
+                              f"(e.g. {list(varies[varies > 1].index[:3])}) -- a pseudobulk covariate must "
+                              "describe the whole sample, not individual cells.")
     if args.counts_layer not in adata.layers:
         raise SystemExit(f"--counts-layer '{args.counts_layer}' not in adata.layers "
                           f"(available: {list(adata.layers.keys())})")
@@ -117,7 +145,8 @@ def main():
     print(f"Aggregating by ({args.sample_col}, {args.annotation_col}, {args.condition_col}), "
           f"min {args.min_cells} cells/group...")
     pseudo_matrix, meta_df = aggregate_pseudobulk(
-        adata, args.sample_col, args.annotation_col, args.condition_col, args.counts_layer, args.min_cells
+        adata, args.sample_col, args.annotation_col, args.condition_col, args.counts_layer, args.min_cells,
+        covariate_cols,
     )
 
     print(f"Kept {len(meta_df)} pseudo-samples (dropped groups with < {args.min_cells} cells)")

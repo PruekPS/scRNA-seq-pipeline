@@ -21,14 +21,26 @@
 # are skipped with a warning (DESeq2 cannot estimate dispersion from a
 # single replicate) rather than crashing the whole run.
 #
-# NOT YET TEST-RUN as of this commit -- dataset-agnostic by design, so
-# there is nothing to validate against until a real condition comparison
-# exists. Validate against tests/data/ (with a synthetic condition column
-# if needed) before trusting output on real data.
+# Design is per-experiment, chosen at run time with --covariates (columns
+# that scripts/10 carried into pseudobulk_metadata.csv via --covariate-cols):
+#   (none)                 ~ condition               unpaired groups
+#   --covariates=patient   ~ patient + condition     paired before/after per patient
+#   --covariates=batch     ~ batch + condition       known processing batch
+# The condition term is always last, so the reported log2 fold change is the
+# condition effect adjusted for the covariates. Before fitting each cell type
+# the design matrix is checked for full rank; if a covariate is confounded
+# with the condition (e.g. every patient appears in only one condition) that
+# cell type is skipped with an explanation instead of DESeq2 erroring out.
+#
+# Smoke-tested 2026-10-19 on HiPerGator with tests/synthetic_tcr.py's planted
+# DE (G0-G9 up 4x at "6h", G10-G39 up 3x in one patient): unpaired found 38
+# significant hits, ~patient + condition found 62, all of them planted
+# condition genes (0 patient genes, 0 others); a covariate confounded with the
+# condition was refused per cell type. NOT yet run on real data.
 #
 # Usage (local):
-#   Rscript 11_pseudobulk_deseq2.R --input-dir pseudobulk/ --output-dir de_results/ \
-#     --condition-a disease --condition-b healthy
+#   Rscript 11_pseudobulk_deseq2.R --input-dir=pseudobulk/ --output-dir=de_results/ \
+#     --condition-a=disease --condition-b=healthy [--covariates=patient]
 #
 # Usage (HPC): see pipeline/run_pseudobulk_de.slurm.
 
@@ -40,7 +52,7 @@ suppressMessages({
 })
 
 parse_args <- function(args) {
-  out <- list(padj.threshold = 0.05, lfc.threshold = 1.0, top.n.heatmap = 30, min.replicates = 2)
+  out <- list(padj.threshold = 0.05, lfc.threshold = 1.0, top.n.heatmap = 30, min.replicates = 2, covariates = "")
   for (a in args) {
     if (!startsWith(a, "--") || !grepl("=", a)) next
     kv <- sub("^--", "", a)
@@ -56,7 +68,7 @@ args <- parse_args(commandArgs(trailingOnly = TRUE))
 if (is.null(args$input.dir) || is.null(args$output.dir) || is.null(args$condition.a) || is.null(args$condition.b)) {
   stop("Usage: Rscript 11_pseudobulk_deseq2.R --input-dir=DIR --output-dir=DIR ",
        "--condition-a=LEVEL --condition-b=LEVEL [--padj-threshold=0.05] [--lfc-threshold=1.0] ",
-       "[--top-n-heatmap=30] [--min-replicates=2]")
+       "[--top-n-heatmap=30] [--min-replicates=2] [--covariates=col1,col2]")
 }
 input_dir <- args$input.dir
 output_dir <- args$output.dir
@@ -66,6 +78,9 @@ padj_threshold <- as.numeric(args$padj.threshold)
 lfc_threshold <- as.numeric(args$lfc.threshold)
 top_n_heatmap <- as.integer(args$top.n.heatmap)
 min_replicates <- as.integer(args$min.replicates)
+covariates <- trimws(strsplit(args$covariates, ",", fixed = TRUE)[[1]])
+covariates <- covariates[nzchar(covariates)]
+design_formula <- as.formula(paste("~", paste(c(covariates, "condition"), collapse = " + ")))
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(file.path(output_dir, "volcano_plots"), recursive = TRUE, showWarnings = FALSE)
@@ -82,12 +97,21 @@ mode(counts) <- "integer"
 meta <- meta[meta$condition %in% c(condition_a, condition_b), ]
 counts <- counts[, meta$pseudo_sample_id, drop = FALSE]
 meta$condition <- factor(meta$condition, levels = c(condition_b, condition_a))  # condition_b = reference
+missing_cov <- setdiff(covariates, names(meta))
+if (length(missing_cov) > 0) {
+  stop("--covariates not found in pseudobulk_metadata.csv: ", paste(missing_cov, collapse = ", "),
+       ". Re-run scripts/10 with --covariate-cols=", paste(covariates, collapse = ","))
+}
+for (cv in covariates) if (is.character(meta[[cv]]) || is.logical(meta[[cv]])) meta[[cv]] <- factor(meta[[cv]])
+rownames(meta) <- meta$pseudo_sample_id
+cat("Design:", deparse(design_formula), "\n")
 
 cat(sprintf("Loaded %d genes x %d pseudo-samples across %d cell types (comparing '%s' vs '%s')\n",
             nrow(counts), ncol(counts), length(unique(meta$cell_type)), condition_a, condition_b))
 
 all_results <- list()
 vst_by_celltype <- list()
+n_skip_design <- 0
 
 for (ct in sort(unique(meta$cell_type))) {
   ct_meta <- meta[meta$cell_type == ct, ]
@@ -104,12 +128,29 @@ for (ct in sort(unique(meta$cell_type))) {
   keep_genes <- rowSums(ct_counts) > 0
   ct_counts <- ct_counts[keep_genes, , drop = FALSE]
 
-  dds <- DESeqDataSetFromMatrix(countData = ct_counts, colData = ct_meta, design = ~condition)
+  ct_meta[] <- lapply(ct_meta, function(x) if (is.factor(x)) droplevels(x) else x)
+  mm <- model.matrix(design_formula, data = ct_meta)
+  if (qr(mm)$rank < ncol(mm)) {
+    cat(sprintf("SKIP '%s': design %s is not estimable here -- a covariate is confounded with the condition ",
+                ct, deparse(design_formula)),
+        "(or has a level present in only one pseudo-sample). Check which samples survived --min-cells-per-group.\n")
+    n_skip_design <- n_skip_design + 1
+    next
+  }
+  if (nrow(mm) <= ncol(mm)) {
+    cat(sprintf("SKIP '%s': %d pseudo-samples but %d model coefficients -- no residual degrees of freedom.\n",
+                ct, nrow(mm), ncol(mm)))
+    n_skip_design <- n_skip_design + 1
+    next
+  }
+
+  dds <- DESeqDataSetFromMatrix(countData = ct_counts, colData = ct_meta, design = design_formula)
   dds <- DESeq(dds, quiet = TRUE)
   res <- results(dds, contrast = c("condition", condition_a, condition_b), alpha = padj_threshold)
   res_df <- as.data.frame(res)
   res_df$gene <- rownames(res_df)
   res_df$cell_type <- ct
+  res_df$design <- deparse(design_formula)
   res_df <- res_df[order(res_df$padj), ]
 
   out_csv <- file.path(output_dir, paste0("de_", gsub("[^A-Za-z0-9]", "_", ct), ".csv"))
@@ -137,6 +178,10 @@ for (ct in sort(unique(meta$cell_type))) {
 }
 
 if (length(all_results) == 0) {
+  if (n_skip_design > 0) {
+    stop("No cell type could be fitted: ", n_skip_design, " were skipped because the design ",
+         deparse(design_formula), " is not estimable (see the SKIP lines above). Drop or change --covariates.")
+  }
   stop("No cell type had enough replicates in both conditions (need >= ", min_replicates,
        " pseudo-samples per condition) -- nothing to report. Check pseudobulk_metadata.csv.")
 }

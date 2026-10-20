@@ -201,9 +201,9 @@ cd scRNA-seq-pipeline</code></pre>
     <table>
       <thead><tr><th>Path</th><th>What's in it</th></tr></thead>
       <tbody>
-        <tr><td class="mono">scripts/</td><td>The actual pipeline steps, numbered in run order (<code>00_</code> through <code>11_</code>). Each is a standalone command-line script with <code>--help</code>-style usage in its own docstring.</td></tr>
+        <tr><td class="mono">scripts/</td><td>The actual pipeline steps, numbered in run order (<code>00_</code> through <code>13_</code>). Each is a standalone command-line script with <code>--help</code>-style usage in its own docstring.</td></tr>
         <tr><td class="mono">pipeline/</td><td>SLURM driver scripts that chain multiple <code>scripts/*.py</code> steps into one HPC job.</td></tr>
-        <tr><td class="mono">envs/</td><td><code>environment.yml</code> (the conda environment spec) and <code>install_r_extras.sh</code> (the extra installs conda alone can't do).</td></tr>
+        <tr><td class="mono">envs/</td><td><code>environment.yml</code> (the main conda environment, <code>scrna</code>), <code>environment_trajectory.yml</code> (a second, Python 3.12 environment, <code>scrna-traj</code>, used only by the CellRank steps 08&ndash;09, because CellRank needs a newer Python than the main environment), and <code>install_r_extras.sh</code> (the extra installs conda alone can't do).</td></tr>
         <tr><td class="mono">docs/</td><td>Everything you're reading now, plus <code>pipeline_overview.html</code> (full architecture) and a deep-dive report per stage with real validation numbers.</td></tr>
         <tr><td class="mono">tests/</td><td>Convention for small smoke-test data — see <a href="#small">Section 4</a>.</td></tr>
       </tbody>
@@ -238,6 +238,9 @@ conda activate scrna</code></pre>
     <div class="step-title"><span class="step-num">3</span><h3>Verify</h3></div>
     <pre><code>conda run -n scrna python -c "import scanpy; print(scanpy.__version__)"
 conda run -n scrna Rscript -e 'library(CellChat); packageVersion("CellChat")'</code></pre>
+    <p>Only if you will run the trajectory steps (08&ndash;09), also build the second environment, again as a job on a compute node:</p>
+    <pre><code>sbatch --account=&lt;your-account&gt; --qos=&lt;your-qos&gt; --cpus-per-task=4 --mem=32gb --time=02:00:00 \
+  --wrap="mamba env create -f envs/environment_trajectory.yml"</code></pre>
   </section>
 
   <section id="data">
@@ -357,6 +360,31 @@ Rscript scripts/11_pseudobulk_deseq2.R --input-dir=pseudobulk/ --output-dir=pseu
   --condition-a=disease --condition-b=healthy</code></pre>
     <p>This is for comparing two groups (e.g. disease vs. healthy, treatment vs. control) rather than ranking markers within one dataset. Why not just run a differential expression test cell-by-cell? Because cells from the same biological replicate aren't independent samples — a per-cell test silently treats "3 donors, 3000 cells each" as 9000 independent data points, which inflates how significant a result looks. <strong>Pseudobulk</strong> fixes this: sum raw counts within each (sample, cell type, condition) group first, so each donor contributes exactly one data point per comparison, then run a real bulk RNA-seq method (DESeq2) on that. <code>--condition-col</code> is deliberately generic — point it at whatever comparison your real data actually has, there's no dataset-specific assumption baked in.</p>
     <p>The output includes one <strong>volcano plot</strong> per cell type (each gene's fold-change on the x-axis, statistical confidence on the y-axis — genes that are both big-effect and high-confidence stand out in the corners) and one combined <strong>heatmap</strong> of the top differentially-expressed genes across every pseudo-sample, so you can see at a glance whether a given gene's pattern is consistent across cell types or specific to one. A cell type gets skipped automatically if either condition has fewer than 2 pseudo-samples — DESeq2 can't estimate variability from a single replicate, and reporting a p-value from a comparison that can't actually detect noise would be misleading, not just incomplete.</p>
+
+    <h4>Matching the statistical design to your experiment</h4>
+    <p>Different experiments need different models, and the scripts let you choose at run time instead of editing code:</p>
+    <pre><code># unpaired groups (different people in each group): the default
+... 11_pseudobulk_deseq2.R ... --condition-a=disease --condition-b=healthy
+
+# paired before/after samples from the same patients: tell DESeq2 who is who
+python scripts/10_pseudobulk_prep.py ... --condition-col timepoint --covariate-cols patient
+Rscript scripts/11_pseudobulk_deseq2.R ... --condition-a=6h --condition-b=pre --covariates=patient
+
+# a known processing batch that is spread across both groups
+... --covariate-cols batch  ...  --covariates=batch</code></pre>
+    <p>Why it matters: people differ from each other a lot. In a paired study, comparing each patient's "after" with the same patient's "before" removes that person-to-person noise, so real treatment effects stand out more clearly. On the pipeline's synthetic test data, where the true answer is known, adding <code>patient</code> found 62 of the planted changes instead of 38, with no false hits either way. Two rules the scripts enforce for you: a covariate must describe the whole sample (one patient, one batch), not individual cells; and it must not line up perfectly with the comparison (if every patient appears in only one group, "patient" and "condition" are the same thing and cannot be separated &mdash; the script says so and skips instead of producing nonsense).</p>
+
+    <h3>12 / 13 — T-cell receptors (Evercode TCR): clonotypes, sharing, expansion</h3>
+    <pre><code># after split-pipe --tcr_analysis (+ --mode comb) and the WT chain through 04b
+python scripts/12_tcr_attach.py --wt-input 04b_annotated.h5ad \
+  --airr-root /path/to/tcr_combined --output 12_tcr.h5ad --plot-dir tcr_plots
+python scripts/13_tcr_analysis.py --input 12_tcr.h5ad --output-dir tcr_results \
+  --sample-col sample --group-col patient --annotation-col cell_type_v2</code></pre>
+    <p>Every T cell carries a receptor made of two chains, alpha (TRA) and beta (TRB). The CDR3 region of each chain is the part that recognizes antigen, and it is close to unique to each T-cell family: when a T cell divides after meeting its antigen, all its descendants keep the same CDR3s. So cells sharing identical TRA and TRB CDR3 sequences form a <strong>clonotype</strong> &mdash; one family. A clonotype with many cells has <strong>expanded</strong>, which usually means it has been responding to something.</p>
+    <p>Step 12 reads Parse's TCR output (a standard "AIRR" table, one row per chain) with the scirpy package and attaches it to the matching cells of your annotated WT data. <strong>Read its first lines carefully.</strong> It prints how many TCR cells matched a WT cell; if under half match, it stops on purpose, because the cell names are probably written differently on the two sides (often a sublibrary tag), and it tells you which option fixes that. It also saves a plot of how often each cell type has a TCR: this should be high in T cells and near zero in B cells and monocytes. If not, something is wrong upstream and nothing after it should be trusted.</p>
+    <p>Step 13 answers three questions. <em>How diverse is each sample's repertoire?</em> &mdash; reported both raw and "rarefied" (every sample cut down to the same number of cells, repeatedly), because a sample with more cells always looks more diverse, so only rarefied numbers are fair to compare. <em>Which clonotypes appear in more than one sample?</em> &mdash; for example the same family before and after treatment, or in blood and tissue, and "public" clones seen in more than one patient. <em>Which cell states hold the expanded clones?</em> &mdash; per sample and pooled. The scripts deliberately produce no p-values here: cells from one sample are not independent, so to test a difference between conditions, use the per-sample fractions as your data points, the same idea as pseudobulk above.</p>
+    <p class="stage-label">Status</p>
+    <p>Steps 12&ndash;13 are smoke-tested on a synthetic dataset with planted clones (<code>tests/synthetic_tcr.py</code>) and have not yet been run on real Parse TCR output. Your TCR libraries also need long enough reads: read 1 must cover the CDR3 and read 2 the cell barcodes, so a very short single-end run cannot be analyzed.</p>
   </section>
 
   <section id="slurm">

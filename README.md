@@ -1,7 +1,7 @@
 # scRNA-seq Analysis Pipeline
 
 A single-cell RNA-seq pipeline for Parse Biosciences Evercode data (whole
-transcriptome now, TCR/VDJ in a later phase): raw sequencer output →
+transcriptome, plus an Evercode TCR clonotype module): raw sequencer output →
 Parse demultiplexing → Python/scanpy QC/clustering/annotation → optional
 Harmony batch integration → optional R/CellChat cell-cell communication
 analysis, built to run at scale on [HiPerGator](https://www.rc.ufl.edu/)
@@ -42,7 +42,16 @@ deliberately no RNA velocity — see
 [`docs/trajectory_cellrank_overview.html`](docs/trajectory_cellrank_overview.html))
 and pseudobulk differential expression with DESeq2, volcano plots, and a
 top-DE-gene heatmap, dataset-agnostic by design (any `--condition-col`
-supplied at run time).
+supplied at run time). The DE design is chosen per experiment: sample-level
+covariates such as `patient` (paired before/after) or `batch` are passed at
+run time, and confounded designs are refused with an explanation.
+
+The Evercode TCR module (scripts 12-13, using
+[scirpy](https://doi.org/10.1093/bioinformatics/btaa611)) is built and
+smoke-tested on a synthetic fixture with planted clones (`tests/synthetic_tcr.py`),
+but has not yet seen real split-pipe TCR output. It defines clonotypes from
+TRA + TRB CDR3 amino acids and reports diversity, clones shared across samples
+and patients, and the cell states holding expanded clones.
 
 ## Why this design
 
@@ -73,11 +82,15 @@ scripts/               00-04: core pipeline (load, QC, normalize/PCA, cluster, a
                         02b/04b: optional Harmony integration / finer multi-species annotation
                         06-07: CellChat export (Python) + analysis (R)
                         08-09: PAGA + diffusion pseudotime / CellRank fate mapping (no RNA velocity)
-                        10-11: pseudobulk aggregation (Python) + DESeq2 DE, volcano, heatmap (R)
+                        10-11: pseudobulk aggregation (Python) + DESeq2 DE, volcano, heatmap (R);
+                               design set per experiment (--covariate-cols / --covariates)
+                        12-13: Evercode TCR -- attach AIRR clonotypes to WT cells (scirpy),
+                               diversity, clone sharing, phenotype of expanded clones
 pipeline/               SLURM drivers (run_pipeline.slurm, run_downstream.slurm,
-                        run_trajectory.slurm, run_pseudobulk_de.slurm) +
+                        run_trajectory.slurm, run_pseudobulk_de.slurm, run_tcr.slurm) +
                         pipeline/split-pipe/ (HiPerGator setup for Parse's CLI demux)
-envs/environment.yml    reproducible conda env spec (Python/scanpy + R/Seurat/CellChat/DESeq2 stack)
+envs/environment.yml    main conda env (Python 3.11 scanpy + scirpy, R/Seurat/CellChat/DESeq2)
+envs/environment_trajectory.yml  separate Python 3.12 env for CellRank (scripts 08-09)
 tests/                  smoke-test convention and gitignored real/public test data
 ```
 

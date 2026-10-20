@@ -1,0 +1,30 @@
+# Separate env for scripts/08_trajectory_paga.py + 09_cellrank_fate_mapping.py.
+#
+# Why separate: cellrank>=2.3 requires python>=3.12, but the main `scrna`
+# env is on python 3.11 (validated end-to-end, incl. the pinned harmonypy and
+# the CellChat R stack). Upgrading python in place would put that proven env
+# at risk, so the trajectory stage gets its own small env, the same pattern
+# as the `splitpipe` env. Scripts 08/09 read the annotated .h5ad that the
+# main env already produced; they do not need harmony, R, or CellChat.
+#
+# Create (on a compute node, never the login node), or just run
+# envs/install_trajectory_de.slurm which does this plus the DESeq2 install:
+#   conda env create -p <PROJECT_ROOT>/.conda/envs/scrna-traj -f envs/environment_trajectory.yml
+name: scrna-traj
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.12
+  - scanpy>=1.11
+  - anndata>=0.11
+  - numpy>=2.0
+  - pandas>=2.2,<3.0
+  - scipy
+  - scikit-learn
+  - matplotlib-base
+  - python-igraph
+  - leidenalg
+  - umap-learn
+  - cellrank>=2.3
+  - pygpcca>=1.0.4
