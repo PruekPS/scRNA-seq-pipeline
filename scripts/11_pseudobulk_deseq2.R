@@ -21,6 +21,15 @@
 # are skipped with a warning (DESeq2 cannot estimate dispersion from a
 # single replicate) rather than crashing the whole run.
 #
+# Paired design (--pair-col=pair, after scripts/10 was run with --pair-col):
+# fits ~ pair + condition, so the condition effect is estimated within each
+# pair (e.g. the same patient's pre and post draws) and between-pair
+# baseline differences are absorbed by the pair term -- the standard DESeq2
+# approach for paired samples (DESeq2 vignette, "Multi-factor designs").
+# Per cell type, only complete pairs (>= 1 pseudo-sample in each condition)
+# are kept; pseudo-samples with no pair are dropped; --min-replicates then
+# counts complete pairs.
+#
 # NOT YET TEST-RUN as of this commit -- dataset-agnostic by design, so
 # there is nothing to validate against until a real condition comparison
 # exists. Validate against tests/data/ (with a synthetic condition column
@@ -56,8 +65,9 @@ args <- parse_args(commandArgs(trailingOnly = TRUE))
 if (is.null(args$input.dir) || is.null(args$output.dir) || is.null(args$condition.a) || is.null(args$condition.b)) {
   stop("Usage: Rscript 11_pseudobulk_deseq2.R --input-dir=DIR --output-dir=DIR ",
        "--condition-a=LEVEL --condition-b=LEVEL [--padj-threshold=0.05] [--lfc-threshold=1.0] ",
-       "[--top-n-heatmap=30] [--min-replicates=2]")
+       "[--top-n-heatmap=30] [--min-replicates=2] [--pair-col=pair]")
 }
+pair_col <- args$pair.col  # NULL = unpaired ~condition
 input_dir <- args$input.dir
 output_dir <- args$output.dir
 condition_a <- args$condition.a
@@ -80,17 +90,46 @@ colnames(counts) <- meta$pseudo_sample_id
 mode(counts) <- "integer"
 
 meta <- meta[meta$condition %in% c(condition_a, condition_b), ]
+if (!is.null(pair_col)) {
+  if (!pair_col %in% colnames(meta)) {
+    stop("--pair-col '", pair_col, "' not in pseudobulk_metadata.csv (columns: ",
+         paste(colnames(meta), collapse = ", "), ") -- rerun scripts/10 with --pair-col")
+  }
+  n_unpaired <- sum(is.na(meta[[pair_col]]) | meta[[pair_col]] == "")
+  if (n_unpaired > 0) cat(sprintf("Paired mode: dropping %d pseudo-samples with no '%s'\n", n_unpaired, pair_col))
+  meta <- meta[!(is.na(meta[[pair_col]]) | meta[[pair_col]] == ""), ]
+  meta$pair <- factor(meta[[pair_col]])
+}
 counts <- counts[, meta$pseudo_sample_id, drop = FALSE]
 meta$condition <- factor(meta$condition, levels = c(condition_b, condition_a))  # condition_b = reference
 
-cat(sprintf("Loaded %d genes x %d pseudo-samples across %d cell types (comparing '%s' vs '%s')\n",
-            nrow(counts), ncol(counts), length(unique(meta$cell_type)), condition_a, condition_b))
+cat(sprintf("Loaded %d genes x %d pseudo-samples across %d cell types (comparing '%s' vs '%s'%s)\n",
+            nrow(counts), ncol(counts), length(unique(meta$cell_type)), condition_a, condition_b,
+            if (is.null(pair_col)) "" else sprintf(", paired by '%s'", pair_col)))
 
 all_results <- list()
 vst_by_celltype <- list()
 
 for (ct in sort(unique(meta$cell_type))) {
   ct_meta <- meta[meta$cell_type == ct, ]
+  if (!is.null(pair_col)) {
+    # Keep only pairs observed in both conditions for this cell type; a pair
+    # seen in one condition only is absorbed entirely by its pair term and
+    # contributes nothing to the within-pair condition estimate.
+    has_a <- unique(as.character(ct_meta$pair[ct_meta$condition == condition_a]))
+    has_b <- unique(as.character(ct_meta$pair[ct_meta$condition == condition_b]))
+    complete <- intersect(has_a, has_b)
+    dropped <- setdiff(unique(as.character(ct_meta$pair)), complete)
+    if (length(dropped) > 0) {
+      cat(sprintf("  '%s': dropping incomplete pair(s) %s\n", ct, paste(dropped, collapse = ", ")))
+    }
+    ct_meta <- ct_meta[as.character(ct_meta$pair) %in% complete, ]
+    ct_meta$pair <- droplevels(ct_meta$pair)
+    if (length(complete) < min_replicates) {
+      cat(sprintf("SKIP '%s': only %d complete pair(s) (need >= %d)\n", ct, length(complete), min_replicates))
+      next
+    }
+  }
   n_a <- sum(ct_meta$condition == condition_a)
   n_b <- sum(ct_meta$condition == condition_b)
   if (n_a < min_replicates || n_b < min_replicates) {
@@ -99,12 +138,14 @@ for (ct in sort(unique(meta$cell_type))) {
     next
   }
 
-  cat(sprintf("=== DESeq2: %s (%d vs %d pseudo-samples) ===\n", ct, n_a, n_b))
+  cat(sprintf("=== DESeq2: %s (%d vs %d pseudo-samples%s) ===\n", ct, n_a, n_b,
+              if (is.null(pair_col)) "" else sprintf(", %d pairs", nlevels(ct_meta$pair))))
   ct_counts <- counts[, ct_meta$pseudo_sample_id, drop = FALSE]
   keep_genes <- rowSums(ct_counts) > 0
   ct_counts <- ct_counts[keep_genes, , drop = FALSE]
 
-  dds <- DESeqDataSetFromMatrix(countData = ct_counts, colData = ct_meta, design = ~condition)
+  design <- if (is.null(pair_col)) ~condition else ~pair + condition
+  dds <- DESeqDataSetFromMatrix(countData = ct_counts, colData = ct_meta, design = design)
   dds <- DESeq(dds, quiet = TRUE)
   res <- results(dds, contrast = c("condition", condition_a, condition_b), alpha = padj_threshold)
   res_df <- as.data.frame(res)
@@ -152,24 +193,35 @@ top_overall <- head(unique(combined_df$gene[!is.na(combined_df$padj)]), top_n_he
 heatmap_mat <- matrix(NA_real_, nrow = length(top_overall), ncol = ncol(counts),
                        dimnames = list(top_overall, colnames(counts)))
 for (ct in names(vst_by_celltype)) {
-  ct_cols <- meta$pseudo_sample_id[meta$cell_type == ct]
   ct_vst <- vst_by_celltype[[ct]]
+  ct_cols <- colnames(ct_vst)  # paired mode may have dropped incomplete pairs
   shared_genes <- intersect(top_overall, rownames(ct_vst))
   heatmap_mat[shared_genes, ct_cols] <- ct_vst[shared_genes, ct_cols, drop = FALSE]
 }
 heatmap_mat <- heatmap_mat[rowSums(!is.na(heatmap_mat)) > 0, , drop = FALSE]
+# Pseudo-samples from skipped cell types (too few replicates/pairs) have no
+# VST values at all; an all-NA column makes hclust fail, so drop them.
+heatmap_mat <- heatmap_mat[, colSums(!is.na(heatmap_mat)) > 0, drop = FALSE]
 heatmap_mat_scaled <- t(scale(t(heatmap_mat)))  # z-score per gene across pseudo-samples
+# Any NA left (a gene untested in one cell type) can still break distance
+# computation for clustering -- fall back to unclustered order in that case.
+can_cluster <- !anyNA(heatmap_mat_scaled)
+if (!can_cluster) cat("  Heatmap has genes untested in some cell types -- drawing without clustering\n")
 
-col_anno <- HeatmapAnnotation(
-  condition = meta$condition[match(colnames(heatmap_mat_scaled), meta$pseudo_sample_id)],
-  cell_type = meta$cell_type[match(colnames(heatmap_mat_scaled), meta$pseudo_sample_id)]
-)
+anno_idx <- match(colnames(heatmap_mat_scaled), meta$pseudo_sample_id)
+col_anno <- if (is.null(pair_col)) {
+  HeatmapAnnotation(condition = meta$condition[anno_idx], cell_type = meta$cell_type[anno_idx])
+} else {
+  HeatmapAnnotation(condition = meta$condition[anno_idx], cell_type = meta$cell_type[anno_idx],
+                    pair = as.character(meta$pair[anno_idx]))
+}
 
 png(file.path(output_dir, "top_de_genes_heatmap.png"), width = 2400, height = max(1200, 40 * nrow(heatmap_mat_scaled)), res = 200)
 draw(Heatmap(heatmap_mat_scaled, name = "z-score (VST)",
              top_annotation = col_anno,
              show_column_names = FALSE,
              row_names_gp = grid::gpar(fontsize = 8),
+             cluster_rows = can_cluster, cluster_columns = can_cluster,
              na_col = "grey90"))
 dev.off()
 

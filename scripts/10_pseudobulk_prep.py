@@ -29,9 +29,18 @@ Input: an annotated .h5ad with raw counts in a layer (scripts/02_normalize_pca.p
 onward all preserve adata.layers["counts"]) and a cell-type annotation column
 (scripts/04_markers_annotation.py's cell_type_demo or 04b's cell_type_v2).
 
+Paired designs (--pair-col): when the same donor is sampled under both
+conditions (e.g. pre- and post-treatment draws), between-donor variation
+can swamp the condition effect in an unpaired ~condition model. Passing
+--pair-col records each sample's pairing unit so script 11 can fit
+~ pair + condition instead, testing the condition effect within pairs.
+
 Usage:
     python 10_pseudobulk_prep.py --input 04b_annotated.h5ad --output-dir pseudobulk/ \
         --condition-col disease_status --sample-col sample --annotation-col cell_type_v2
+    # paired pre/post within each patient-visit:
+    python 10_pseudobulk_prep.py --input 04b_annotated.h5ad --output-dir pseudobulk/ \
+        --condition-col timepoint --pair-col pair
 """
 import argparse
 import pathlib
@@ -43,10 +52,25 @@ import scipy.io as sio
 import scipy.sparse as sp
 
 
-def aggregate_pseudobulk(adata, sample_col, annotation_col, condition_col, counts_layer, min_cells):
+def sample_to_pair(obs, sample_col, pair_col):
+    """Map each sample to its pairing unit (e.g. patient, or patient x visit
+    for repeated pre/post draws). Pairing is a property of the biological
+    sample, so every cell of one sample must carry the same value."""
+    per_sample = obs.groupby(sample_col, observed=True)[pair_col].nunique(dropna=False)
+    inconsistent = per_sample[per_sample > 1].index.tolist()
+    if inconsistent:
+        raise SystemExit(f"--pair-col '{pair_col}' varies within sample(s) {inconsistent} -- "
+                         f"pairing must be constant per sample")
+    return obs.groupby(sample_col, observed=True)[pair_col].first().to_dict()
+
+
+def aggregate_pseudobulk(adata, sample_col, annotation_col, condition_col, counts_layer, min_cells,
+                         pair_col=None):
     counts = adata.layers[counts_layer]
     if not sp.issparse(counts):
         counts = sp.csr_matrix(counts)
+
+    pair_of = sample_to_pair(adata.obs, sample_col, pair_col) if pair_col else {}
 
     group_cols = [sample_col, annotation_col, condition_col]
     groups = adata.obs.groupby(group_cols, observed=True).indices
@@ -60,13 +84,17 @@ def aggregate_pseudobulk(adata, sample_col, annotation_col, condition_col, count
         summed = np.asarray(counts[cell_idx, :].sum(axis=0)).ravel()
         pseudo_id = f"{sample_val}__{celltype_val}__{condition_val}".replace(" ", "_")
         pseudo_counts.append(summed)
-        meta_rows.append({
+        row = {
             "pseudo_sample_id": pseudo_id,
             "sample": sample_val,
             "cell_type": celltype_val,
             "condition": condition_val,
             "n_cells_aggregated": n_cells,
-        })
+        }
+        if pair_col:
+            pair_val = pair_of.get(sample_val)
+            row["pair"] = pair_val if pd.notna(pair_val) and str(pair_val) != "" else None
+        meta_rows.append(row)
 
     if not meta_rows:
         raise SystemExit(
@@ -98,11 +126,17 @@ def main():
     parser.add_argument("--min-cells-per-group", type=int, default=10, dest="min_cells",
                          help="Minimum cells required to keep a (sample, cell_type, condition) "
                               "pseudo-sample (default: 10 -- a pseudobulk of fewer cells is unreliable)")
+    parser.add_argument("--pair-col", default=None, dest="pair_col",
+                         help="Optional adata.obs column naming the pairing unit for a paired design "
+                              "(e.g. 'patient', or a patient x visit column for pre/post draws). Written "
+                              "to pseudobulk_metadata.csv as 'pair'; run 11_pseudobulk_deseq2.R with "
+                              "--pair-col=pair to fit ~ pair + condition. Samples with an empty value "
+                              "get no pair and are excluded from paired tests.")
     args = parser.parse_args()
 
     adata = sc.read_h5ad(args.input)
 
-    for col in (args.sample_col, args.annotation_col, args.condition_col):
+    for col in (args.sample_col, args.annotation_col, args.condition_col) + ((args.pair_col,) if args.pair_col else ()):
         if col not in adata.obs:
             raise SystemExit(f"'{col}' not in adata.obs (available: {list(adata.obs.columns)})")
     if args.counts_layer not in adata.layers:
@@ -117,12 +151,17 @@ def main():
     print(f"Aggregating by ({args.sample_col}, {args.annotation_col}, {args.condition_col}), "
           f"min {args.min_cells} cells/group...")
     pseudo_matrix, meta_df = aggregate_pseudobulk(
-        adata, args.sample_col, args.annotation_col, args.condition_col, args.counts_layer, args.min_cells
+        adata, args.sample_col, args.annotation_col, args.condition_col, args.counts_layer, args.min_cells,
+        pair_col=args.pair_col,
     )
 
     print(f"Kept {len(meta_df)} pseudo-samples (dropped groups with < {args.min_cells} cells)")
     print("Pseudo-samples per (cell_type, condition):")
     print(meta_df.groupby(["cell_type", "condition"], observed=True).size().to_string())
+    if args.pair_col:
+        n_unpaired = meta_df["pair"].isna().sum()
+        print(f"Pairs (from '{args.pair_col}'): {meta_df['pair'].nunique()} distinct; "
+              f"{n_unpaired} pseudo-samples have no pair and will be excluded from paired tests")
 
     out_dir = pathlib.Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

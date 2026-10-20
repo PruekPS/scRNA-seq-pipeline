@@ -22,6 +22,12 @@ Usage:
         --sample-dir sample1/DGE_filtered/ sample1 \
         --sample-dir sample2/DGE_filtered/ sample2 \
         --output raw.h5ad
+    # split-pipe combined output (cell_metadata.csv already has 'sample'),
+    # plus per-sample metadata joined on by sample name:
+    python 00_load_parse_output.py \
+        --sample-dir combined/all-sample/DGE_filtered/ \
+        --sample-metadata sample_sheet.csv --sample-metadata-key sample_id \
+        --output raw.h5ad
 """
 import argparse
 import pathlib
@@ -116,6 +122,41 @@ def load_one_sample(sample_dir: pathlib.Path, sample_name: str) -> ad.AnnData:
     return adata
 
 
+def attach_sample_metadata(obs: pd.DataFrame, csv_path: str, key: str) -> pd.DataFrame:
+    """Join per-sample metadata (patient, timepoint, condition, ...) onto
+    cells by sample name, so downstream steps (Harmony batch key, pseudobulk
+    --condition-col / pairing) can use those columns directly. split-pipe's
+    own cell_metadata.csv only carries the sample name and barcode wells."""
+    meta = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
+    if key not in meta.columns:
+        raise KeyError(f"--sample-metadata-key '{key}' not in {csv_path}; columns: {list(meta.columns)}")
+    if meta[key].duplicated().any():
+        raise ValueError(f"Duplicate sample names in {csv_path}: {sorted(meta[key][meta[key].duplicated()])}")
+    meta = meta.set_index(key)
+
+    obs_samples = set(obs["sample"].astype(str))
+    missing = sorted(obs_samples - set(meta.index))
+    if missing == sorted(obs_samples):
+        raise ValueError(f"No sample in the data matches {csv_path}'s '{key}' column -- "
+                         f"data has {sorted(obs_samples)[:5]}...")
+    if missing:
+        # e.g. split-pipe's automatic 'all-sample' when loading per-sample dirs
+        print(f"  Warning: no metadata row for sample(s) {missing}; their metadata columns will be empty")
+    unused = sorted(set(meta.index) - obs_samples)
+    if unused:
+        print(f"  Note: metadata rows with no cells: {unused}")
+
+    clash = [c for c in meta.columns if c in obs.columns]
+    if clash:
+        print(f"  Note: keeping existing per-cell columns {clash}; metadata versions saved as <col>_meta")
+        meta = meta.rename(columns={c: f"{c}_meta" for c in clash})
+
+    joined = meta.reindex(obs["sample"].astype(str).values)
+    joined.index = obs.index
+    print(f"  Attached sample metadata columns: {list(meta.columns)}")
+    return pd.concat([obs, joined], axis=1)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -125,6 +166,15 @@ def main():
              "If SAMPLE_NAME is omitted, the parent directory name is used.",
     )
     parser.add_argument("--output", required=True, help="Path to write the combined raw .h5ad")
+    parser.add_argument(
+        "--sample-metadata", default=None, dest="sample_metadata",
+        help="Optional CSV with one row per sample (e.g. patient, timepoint, condition); "
+             "its columns are joined onto every cell by sample name.",
+    )
+    parser.add_argument(
+        "--sample-metadata-key", default="sample_id", dest="sample_metadata_key",
+        help="Column in --sample-metadata holding the sample name (matched to .obs['sample'])",
+    )
     args = parser.parse_args()
 
     samples = []
@@ -138,6 +188,9 @@ def main():
         combined = samples[0]
     else:
         combined = ad.concat(samples, join="outer", index_unique="-")
+
+    if args.sample_metadata:
+        combined.obs = attach_sample_metadata(combined.obs, args.sample_metadata, args.sample_metadata_key)
 
     print(f"Combined: {combined.n_obs} cells x {combined.n_vars} genes "
           f"across {combined.obs['sample'].nunique()} sample(s)")
