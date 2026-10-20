@@ -1,6 +1,6 @@
 """Step 4: Marker detection and (demo) marker-based annotation.
 
-Per docs/pipeline_overview.html section 06 default path, item 5: pairwise
+Per docs/reference/design-decisions.md roadmap, item 5: pairwise
 marker detection (Wilcoxon rank-sum, the scanpy equivalent of Seurat's
 FindMarkers), then annotation.
 
@@ -8,7 +8,7 @@ The canonical-marker dictionary below is PBMC-specific and exists only to
 exercise the annotation step against the PBMC3k smoke-test data (see
 tests/README.md) -- it is NOT a general-purpose annotation reference.
 Real Parse Evercode data will need tissue-appropriate markers or a
-reference-based method (see docs/pipeline_overview.html section 06 for
+reference-based method (see docs/reference/design-decisions.md roadmap for
 the flagged, not-yet-adopted foundation-model alternative and its caveats).
 
 Input: the clustered .h5ad written by scripts/03_cluster.py.
@@ -27,7 +27,7 @@ import pandas as pd
 import scanpy as sc
 
 # Canonical PBMC markers (Satija lab / scanpy PBMC3k tutorials) -- smoke-test only.
-# Kept deliberately specific per category -- see docs/markers_annotation_deep_dive.html
+# Kept deliberately specific per category -- see docs/reference/annotation.md
 # section 04 for why: an earlier version included CST3/HLA-DPB1/HLA-DPA1 under
 # "Dendritic cell", which are also broadly expressed in monocytes and ended up
 # stealing two correctly-labeled monocyte clusters. FCER1A/CLEC10A are more DC-specific.

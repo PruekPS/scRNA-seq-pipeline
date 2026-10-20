@@ -15,11 +15,11 @@
 #   08 PAGA + diffusion pseudotime (cheap, no new data)
 #   -> 09 CellRank fate mapping (CytoTRACE + connectivity [+ DPT] kernels,
 #      GPCCA estimator) -- NO RNA velocity, see
-#      docs/trajectory_cellrank_overview.html for why and what that gives up.
+#      docs/reference/trajectory-design.md for why and what that gives up.
 #
 # NEITHER step has been test-run as of this commit -- no real bone-marrow+TME
 # dataset exists yet to validate against. See
-# docs/trajectory_cellrank_overview.html for the experimental-design
+# docs/reference/trajectory-design.md for the experimental-design
 # prerequisites (paired compartment sampling, replicate counts) this
 # analysis actually needs before its output means anything. Resource sizing
 # below is a starting guess, not proven -- CellRank's Schur decomposition

@@ -1,6 +1,6 @@
 """Step 1: QC filtering for a raw scRNA-seq count matrix.
 
-Implements the QC stage documented in docs/pipeline_overview.html section 05:
+Implements the QC stage documented in docs/reference/design-decisions.md (QC metrics table):
 per-cell/per-gene metrics, adaptive median-absolute-deviation (MAD) outlier
 detection (Amezquita et al., OSCA; Hong et al., Nat Commun 2022), and
 doublet flagging via Scrublet.

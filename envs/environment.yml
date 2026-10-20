@@ -10,7 +10,7 @@
 # completely broken, would not run any pipeline script. Caught by
 # actually importing scanpy after "successful" install, not by trusting
 # the installer's exit code. Pins below match what's proven to work by
-# scripts/01-04 running clean end-to-end (see docs/*_deep_dive.html).
+# scripts/01-04 running clean end-to-end (see docs/reference/).
 #
 # harmonypy + the r-* / bioconductor-* deps below were added for
 # scripts/02b_harmony_integration.py and scripts/07_cellchat_analysis.R

@@ -18,7 +18,7 @@
 # HPC pipeline where the R and Python steps may run as separate job stages.
 #
 # Usage:
-#   Rscript 00b_seurat_to_h5ad.R /path/to/trailmaker_export.rds /path/to/output_dir/
+#   Rscript 00b_seurat_to_dge_format.R /path/to/trailmaker_export.rds /path/to/output_dir/
 #   python 00_load_parse_output.py --sample-dir /path/to/output_dir/ <sample_name> --output raw.h5ad
 
 suppressMessages({
@@ -28,7 +28,7 @@ suppressMessages({
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) < 2) {
-  stop("Usage: Rscript 00b_seurat_to_h5ad.R <input.rds> <output_dir>")
+  stop("Usage: Rscript 00b_seurat_to_dge_format.R <input.rds> <output_dir>")
 }
 input_rds <- args[1]
 output_dir <- args[2]

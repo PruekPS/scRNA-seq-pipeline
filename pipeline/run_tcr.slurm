@@ -56,7 +56,7 @@ python scripts/13_tcr_analysis.py \
   --output-dir "${OUT_DIR}/13_tcr_results" \
   --sample-col "${SAMPLE_COL}" \
   --annotation-col "${ANNOTATION_COL}" \
-  "${GROUP_ARG[@]}" \
+  ${GROUP_ARG[@]+"${GROUP_ARG[@]}"} \
   ${TCR_ANALYSIS_EXTRA:-}
 
 echo "TCR stage done: ${OUT_DIR}"

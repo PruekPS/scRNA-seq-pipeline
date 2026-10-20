@@ -6,7 +6,7 @@ discovery rate, because cells from the same biological replicate are not
 independent samples -- pseudobulk aggregation (sum counts per
 sample x cell-type x condition group, then run a bulk DE method) controls
 this properly (Murphy & Skene, Nat Commun 2022, doi:10.1038/s41467-022-35519-4;
-see docs/pipeline_overview.html section 06 item 5). This script does the
+see docs/reference/design-decisions.md roadmap, item 6). This script does the
 aggregation; scripts/11_pseudobulk_deseq2.R runs DESeq2 on the result.
 
 Dataset-agnostic by design: --condition-col takes any adata.obs column

@@ -1,7 +1,7 @@
 """Step 8 (optional): PAGA coarse-grained trajectory graph + diffusion pseudotime.
 
 The cheap, no-new-data first step toward trajectory analysis (see
-docs/trajectory_cellrank_overview.html for the full design rationale). Runs
+docs/reference/trajectory-design.md for the full design rationale). Runs
 directly on an already-clustered, already-annotated object -- no raw FASTQ
 reprocessing, no RNA velocity, nothing this pipeline doesn't already produce.
 
@@ -20,7 +20,7 @@ OPTIONAL second signal alongside CytoTRACE (--use-dpt-pseudotime there) --
 CellRank's CytoTRACE kernel does not require this step to have been run.
 
 NOT YET TEST-RUN as of this commit -- no real bone-marrow+TME dataset
-exists yet to validate against (see docs/trajectory_cellrank_overview.html
+exists yet to validate against (see docs/reference/trajectory-design.md
 for the experimental-design prerequisites). Validate against tests/data/
 or a small real subset before trusting output.
 

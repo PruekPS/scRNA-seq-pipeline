@@ -1,6 +1,6 @@
 """Step 3: Neighbor graph, Leiden clustering (resolution scan), UMAP.
 
-Per docs/pipeline_overview.html section 06 default path, item 4: graph-based
+Per docs/reference/design-decisions.md roadmap, item 4: graph-based
 Leiden with a resolution scan rather than one fixed resolution. UMAP is
 computed purely for visualization, not as an input to any later
 quantitative step.

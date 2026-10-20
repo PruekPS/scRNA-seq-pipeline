@@ -51,7 +51,7 @@ parse_args <- function(args) {
 
 args <- parse_args(commandArgs(trailingOnly = TRUE))
 if (is.null(args$input.dir) || is.null(args$output.dir)) {
-  stop("Usage: Rscript 07_cellchat_analysis.R --input-dir=DIR --output-dir=DIR [--species=human|mouse] [--min-cells=10] [--workers=4]")
+  stop("Usage: Rscript 07_cellchat_analysis.R --input-dir=DIR --output-dir=DIR [--species=human|mouse] [--min-cells=10] [--workers=1]")
 }
 input_dir <- args$input.dir
 output_dir <- args$output.dir

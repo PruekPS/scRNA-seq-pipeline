@@ -1,6 +1,6 @@
 """Step 2b (optional): Harmony batch integration on the PCA embedding.
 
-Motivated by a real finding, not a hypothetical: docs/real_data_deep_dive.html
+Motivated by a real finding, not a hypothetical: docs/reference/real-data-validation.md
 documents one Leiden cluster (out of 20, resolution 0.6) that was 95%
 single-donor in the real 50k-cell Parse subset run WITHOUT batch correction.
 This step sits between 02_normalize_pca.py and 03_cluster.py and corrects the

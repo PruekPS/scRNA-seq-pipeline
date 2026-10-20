@@ -21,13 +21,13 @@ CellRank's recommended estimator, which computes coarse-grained
 and computes each cell's fate probability toward each terminal state.
 
 Deliberately NO RNA velocity in this script -- see
-docs/trajectory_cellrank_overview.html for why: standard Parse
+docs/reference/trajectory-design.md for why: standard Parse
 split-pipe/Trailmaker output doesn't separate spliced/unspliced reads,
 so true velocity needs raw FASTQ reprocessing, which is out of scope
 until that's confirmed feasible and worth doing.
 
 NOT YET TEST-RUN as of this commit -- no real bone-marrow+TME dataset
-exists yet to validate against (see docs/trajectory_cellrank_overview.html
+exists yet to validate against (see docs/reference/trajectory-design.md
 for the experimental-design prerequisites this analysis actually needs).
 Validate against tests/data/ or a small real subset before trusting output.
 

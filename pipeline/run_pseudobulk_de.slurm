@@ -30,10 +30,15 @@
 #     /path/to/OUT_DIR CONDITION_COL CONDITION_A CONDITION_B [annotation_col] [sample_col]
 #
 # OUT_DIR must already contain an annotated .h5ad (04b_annotated.h5ad
-# preferred, falls back to 04_annotated.h5ad) with --condition-col actually
-# present in its .obs (i.e. it needs to have survived from the raw Parse
-# cell_metadata.csv through every step -- same mechanism as the existing
-# 'sample' column, see scripts/00_load_parse_output.py).
+# preferred, falls back to 04_annotated.h5ad) with --condition-col present in
+# its .obs -- normally added at load time from the sample sheet
+# (scripts/00_load_parse_output.py --sample-sheet, or SAMPLE_SHEET= for
+# pipeline/run_pipeline.slurm).
+#
+# Design is per experiment: put sample-level covariates in COVARIATES
+# (comma-separated) to fit ~ covariates + condition, e.g. a paired
+# before/after study:
+#   COVARIATES=patient sbatch ... pipeline/run_pseudobulk_de.slurm OUT_DIR timepoint 6h pre
 set -euo pipefail
 
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
@@ -66,13 +71,15 @@ python scripts/10_pseudobulk_prep.py \
   --output-dir "${OUT_DIR}/pseudobulk" \
   --condition-col "${CONDITION_COL}" \
   --sample-col "${SAMPLE_COL}" \
-  --annotation-col "${ANNOTATION_COL}"
+  --annotation-col "${ANNOTATION_COL}" \
+  --covariate-cols "${COVARIATES:-}"
 
 echo "=== [2/2] DESeq2 (${CONDITION_A} vs ${CONDITION_B}) + volcano + heatmap ==="
 Rscript scripts/11_pseudobulk_deseq2.R \
   --input-dir="${OUT_DIR}/pseudobulk" \
   --output-dir="${OUT_DIR}/pseudobulk_de" \
   --condition-a="${CONDITION_A}" \
-  --condition-b="${CONDITION_B}"
+  --condition-b="${CONDITION_B}" \
+  --covariates="${COVARIATES:-}"
 
 echo "=== Done. Final outputs: ${OUT_DIR}/pseudobulk_de/ ==="

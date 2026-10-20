@@ -33,6 +33,11 @@
 #     pipeline/run_pipeline.slurm \
 #     /path/to/DGE_filtered_dir /path/to/output_dir [sample_name] [mad_multiplier]
 #
+# split-pipe combined runs: give <comb_out>/all-sample/DGE_filtered as the
+# DGE dir and attach the study design with a sample sheet (CSV: sample,
+# patient, timepoint, ...) via the SAMPLE_SHEET environment variable:
+#   SAMPLE_SHEET=samples.csv sbatch ... pipeline/run_pipeline.slurm <comb_out>/all-sample/DGE_filtered out/ all-sample
+#
 # QC (step 1) runs Scrublet per-'sample' batch by default (01_qc_filter.py's
 # --batch-key defaults to "sample") -- this is both more correct (Scrublet
 # assumes a single library per run) and far lower peak memory than the
@@ -56,8 +61,11 @@ conda activate "${ENV_NAME}"
 cd "${REPO_ROOT}"
 
 echo "=== [0/4] Load raw Parse output (${RAW_DGE_DIR}) ==="
+SHEET_ARG=()
+[ -n "${SAMPLE_SHEET:-}" ] && SHEET_ARG=(--sample-sheet "${SAMPLE_SHEET}")
 python scripts/00_load_parse_output.py \
   --sample-dir "${RAW_DGE_DIR}" "${SAMPLE_NAME}" \
+  ${SHEET_ARG[@]+"${SHEET_ARG[@]}"} \
   --output "${OUT_DIR}/00_raw.h5ad"
 
 echo "=== [1/4] QC filtering (MAD=${MAD}) ==="

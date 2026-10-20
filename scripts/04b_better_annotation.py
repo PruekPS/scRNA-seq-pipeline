@@ -1,6 +1,6 @@
 """Step 4b (replaces 04's demo annotation): finer marker set + confidence-gated
 scoring to address the scale-breakdown documented in
-docs/markers_annotation_deep_dive.html and docs/real_data_deep_dive.html.
+docs/reference/annotation.md and docs/reference/real-data-validation.md.
 
 Two concrete, documented failures in the original 6-category
 scripts/04_markers_annotation.py demo dictionary, both from the real 50k-cell
@@ -25,7 +25,7 @@ additive step for real-scale data:
     marked "Ambiguous (top1 / top2)" for manual review instead of forced.
 
 This is still a marker-dictionary heuristic, not a reference-based classifier
-(e.g. CellTypist, Azimuth) -- see docs/pipeline_overview.html section 06 for
+(e.g. CellTypist, Azimuth) -- see docs/reference/design-decisions.md roadmap for
 that flagged-but-not-yet-adopted alternative.
 
 Multi-species: --species selects one of three PBMC/blood-immune marker

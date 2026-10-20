@@ -1,7 +1,7 @@
 """Step 2: Normalization, HVG selection, and PCA.
 
 Implements the feature-selection/dimensionality-reduction stage documented
-in docs/pipeline_overview.html section 06 (default path, item 2):
+in docs/reference/design-decisions.md roadmap (item 2):
 log-normalization -> highly-variable-gene selection on raw counts
 (Seurat v3 flavor) -> scaling -> PCA. Batch integration and clustering are
 separate downstream scripts (03+).
