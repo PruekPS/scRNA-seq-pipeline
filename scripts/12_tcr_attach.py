@@ -15,11 +15,14 @@ set of cells sharing identical TRA + TRB CDR3 amino-acid sequences
 cells). `--same-v-gene` and `--clone-sequence nt` make it stricter.
 
 THE ONE THING TO WATCH: the join between TCR cell ids and WT cell names.
-Split-pipe TCR ids look like `<bc>` (per-sublibrary run) or `<bc>__<sublib>`
-(after `--mode comb`); the WT side depends on how script 00 named cells. This
+split-pipe names cells by their barcode wells, `NN_NN_NN` (the WT `bc_wells`
+column, which script 00 uses as the cell name). After `--mode comb` both WT and
+TCR append `__s<N>`, N = the sublibrary's position in the --sublibraries list,
+so combined TCR matches combined WT directly IF both were combined in the same
+order (checked per sublibrary below). This
 script matches exactly, reports the match rate, and STOPS if it is below
 `--min-match-rate` instead of silently attaching nothing. If the two sides
-differ by the sublibrary suffix, prefer --tcr-suffix-format '__{label}' (rebuild
+differ by the sublibrary suffix, prefer --tcr-suffix-format '__s{label}' (rebuild
 the suffix on the TCR side from each --airr LABEL); --strip-wt-suffix is
 refused whenever the same barcode occurs in more than one sublibrary.
 
@@ -34,9 +37,10 @@ columns, which proves the plumbing, not the real file layout.
 Usage:
   python 12_tcr_attach.py --wt-input 04b_annotated.h5ad \\
       --airr-root /path/to/split-pipe/tcr_comb --output 12_tcr.h5ad
-  python 12_tcr_attach.py --wt-input 04b_annotated.h5ad \\
-      --airr sublib2/S1/TCR_filtered/tcr_annotation_airr.tsv sublib2 \\
-      --airr sublib3/S1/TCR_filtered/tcr_annotation_airr.tsv sublib3 --output 12_tcr.h5ad
+  # per-sublibrary TCR outputs; LABEL = that sublibrary's position in the WT combine list
+  python 12_tcr_attach.py --wt-input 04b_annotated.h5ad --tcr-suffix-format '__s{label}' \\
+      --airr tcr_sub1/all-sample/TCR_filtered/tcr_annotation_airr.tsv 1 \\
+      --airr tcr_sub2/all-sample/TCR_filtered/tcr_annotation_airr.tsv 2 --output 12_tcr.h5ad
 """
 import argparse
 import json
@@ -56,7 +60,8 @@ import scirpy as ir
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-AIRR_GLOB = "**/*tcr_annotation_airr.tsv"
+AIRR_GLOB = "**/*tcr_annotation_airr.tsv*"  # split-pipe's clean step may gzip outputs (.tsv.gz)
+COMBINED_SAMPLE_DIRS = {"all-sample", "all-well"}
 TRUE_STRINGS = {"T", "TRUE", "True", "true", "1", "Y", "yes"}
 VALID_TCR_LOCI = {"TRA", "TRB", "TRG", "TRD"}
 DEFAULT_TCELL_PATTERN = r"T cell|Treg|CD4|CD8|\bT\b|MAIT|gamma|delta|NKT"
@@ -70,12 +75,25 @@ def discover_airr(args) -> list[tuple[pathlib.Path, str]]:
         found.append((path, label))
     if args.airr_root:
         root = pathlib.Path(args.airr_root)
-        for path in sorted(root.glob(AIRR_GLOB)):
-            # <root>/<sample or sublib>/TCR_filtered/tcr_annotation_airr.tsv
-            found.append((path, path.parent.parent.name))
+        paths = [p for p in sorted(root.glob(AIRR_GLOB)) if p.name.endswith((".tsv", ".tsv.gz"))]
+        plain = {p for p in paths if p.name.endswith(".tsv")}
+        paths = [p for p in paths if not (p.name.endswith(".gz") and p.with_suffix("") in plain)]
+        hits = [(path, path.parent.parent.name) for path in paths]
+        # <root>/<sample>/TCR_filtered/tcr_annotation_airr.tsv. split-pipe also writes combined
+        # "all-sample" (and optionally "all-well") folders holding the SAME cells again; mixing them
+        # with per-sample folders would load every cell twice (and fake dual-receptor cells).
+        combined = [h for h in hits if h[1] in COMBINED_SAMPLE_DIRS]
+        per_sample = [h for h in hits if h[1] not in COMBINED_SAMPLE_DIRS]
+        if per_sample:
+            if combined:
+                print(f"  skipping {len(combined)} combined folder(s) "
+                      f"({', '.join(sorted({h[1] for h in combined}))}) -- per-sample folders are used instead")
+            found.extend(per_sample)
+        else:
+            found.extend(combined)
     if not found:
         sys.exit("No AIRR files: pass --airr FILE [LABEL] and/or --airr-root DIR "
-                 f"(searched for {AIRR_GLOB}).")
+                 f"(searched for {AIRR_GLOB}, .tsv or .tsv.gz).")
     missing = [str(p) for p, _ in found if not p.exists()]
     if missing:
         sys.exit(f"AIRR file(s) not found: {missing}")
@@ -90,6 +108,12 @@ def load_airr_tables(files: list[tuple[pathlib.Path, str]]) -> pd.DataFrame:
         print(f"  {path} -> {len(df):,} chains, {df['cell_id'].nunique():,} cells (label '{label}')")
         frames.append(df)
     df = pd.concat(frames, ignore_index=True)
+    if "sequence_id" in df.columns:
+        dup = df.duplicated(["cell_id", "sequence_id"])
+        if dup.any():
+            print(f"  !! dropping {int(dup.sum()):,} duplicated chain rows (same cell_id + sequence_id in more "
+                  "than one file) -- check that overlapping folders were not both passed")
+            df = df[~dup]
     for col in ("cell_id", "locus", "junction_aa"):
         if col not in df.columns:
             sys.exit(f"AIRR table has no '{col}' column; columns present: {list(df.columns)[:30]}")
@@ -152,6 +176,29 @@ def attach(adata: ad.AnnData, airr_df: pd.DataFrame, args) -> tuple[ad.AnnData, 
             f"Examples TCR: {sorted(tcr_cells)[:3]}  WT: {list(keys.iloc[:3])}. "
             "Likely a naming difference (sublibrary suffix? different barcode field?). "
             "Try --strip-tcr-suffix / --strip-wt-suffix / --wt-key-col; nothing was written.")
+
+    # split-pipe's --mode comb names cells <bc>__s<N>, where N is the sublibrary's POSITION in the
+    # --sublibraries list. If TCR and WT were combined with lists in different orders (or a TCR
+    # sublibrary was skipped as empty, which shifts the numbering), one sublibrary's cells look up
+    # the wrong WT sublibrary: most fail to match, but by barcode coincidence a few % match the
+    # WRONG cell. Overall match rate can still look fine, so check each sublibrary separately.
+    group = airr_df["cell_id"].str.extract(r"__(s\d+)$")[0].fillna(airr_df["tcr_source"])
+    per = (pd.DataFrame({"cell": airr_df["cell_id"], "group": group}).drop_duplicates()
+           .assign(hit=lambda d: d["cell"].isin(matched))
+           .groupby("group")["hit"].agg(["mean", "size"]))
+    stats["match_rate_by_group"] = per["mean"].round(4).to_dict()
+    if len(per) > 1:
+        print("  match rate per sublibrary/source: " +
+              ", ".join(f"{g} {r:.0%} (n={int(n):,})" for g, (r, n) in per.iterrows()))
+    bad = per[(per["mean"] < args.min_match_rate) & (per["size"] >= 20)]
+    if len(bad) and not args.allow_partial_match:
+        sys.exit(f"Sublibrary/source {list(bad.index)} matched only "
+                 f"{', '.join(f'{r:.0%}' for r in bad['mean'])} of its TCR cells while others match well. "
+                 "Most likely the TCR and WT `--mode comb --sublibraries` lists were in different orders "
+                 "(split-pipe numbers sublibraries __s1, __s2, ... by list position) or a TCR sublibrary was "
+                 "skipped. Re-combine in the same order, or attach per-sublibrary outputs with "
+                 "--tcr-suffix-format '__s{label}' and the WT sublibrary number as each --airr LABEL. "
+                 "(--allow-partial-match overrides; nothing was written.)")
 
     # point AIRR rows at the WT obs_names so scirpy can align them
     name_for_key = pd.Series(keys.index, index=keys.values)
@@ -242,9 +289,13 @@ def main():
     p.add_argument("--strip-tcr-suffix", action="store_true", help=r"remove a trailing __<sublib> from TCR cell ids")
     p.add_argument("--strip-wt-suffix", action="store_true", help=r"remove a trailing __<sublib> from WT names")
     p.add_argument("--tcr-suffix-format", default=None,
-                   help="append to each TCR cell id, built from its --airr LABEL, e.g. '__{label}' when "
-                        "per-sublibrary TCR ids must match combined WT names like <bc>__<sublib>")
-    p.add_argument("--min-match-rate", type=float, default=0.5)
+                   help="append to each TCR cell id, built from its --airr LABEL. For per-sublibrary TCR "
+                        "runs matched to combined WT names (<bc>__s<N>) use '__s{label}' with each LABEL set "
+                        "to that sublibrary's position N in the WT --sublibraries list")
+    p.add_argument("--min-match-rate", type=float, default=0.5,
+                   help="minimum fraction of TCR cells (overall AND per sublibrary) that must match a WT cell")
+    p.add_argument("--allow-partial-match", action="store_true",
+                   help="do not stop when one sublibrary matches poorly (not recommended)")
     p.add_argument("--keep-multiplets", action="store_true", help="keep cells split-pipe flags isMultiplet")
     p.add_argument("--clone-sequence", choices=["aa", "nt"], default="aa")
     p.add_argument("--dual-ir", choices=["primary_only", "all", "any"], default="primary_only")
@@ -273,7 +324,7 @@ def main():
     print("Sanity report")
     summary = {**stats, **sanity_report(adata, args, plot_dir)}
     summary["settings"] = {k: getattr(args, k) for k in
-                           ("clone_sequence", "dual_ir", "same_v_gene", "strip_tcr_suffix", "strip_wt_suffix", "tcr_suffix_format")}
+                           ("clone_sequence", "dual_ir", "same_v_gene", "strip_tcr_suffix", "strip_wt_suffix", "tcr_suffix_format", "allow_partial_match")}
     (plot_dir / "tcr_attach_summary.json").write_text(json.dumps(summary, indent=2, default=str))
 
     adata.write_h5ad(args.output)

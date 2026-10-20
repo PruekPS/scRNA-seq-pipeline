@@ -53,6 +53,13 @@ but has not yet seen real split-pipe TCR output. It defines clonotypes from
 TRA + TRB CDR3 amino acids and reports diversity, clones shared across samples
 and patients, and the cell states holding expanded clones.
 
+`tests/integration_smoke.sh` runs the whole chain end to end (load with a
+sample sheet, QC, Harmony by sublibrary, clustering, annotation, TCR, paired
+pseudobulk DE) on synthetic data written in split-pipe's output layout
+(`tests/synthetic_splitpipe.py`), then checks every result against the planted
+truth. split-pipe itself is Parse Biosciences' licensed software and is not
+included here; get it from Parse.
+
 ## Why this design
 
 - **Parse's split-pool barcoding** ([Rosenberg et al., *Science* 2018](https://doi.org/10.1126/science.aam8999))

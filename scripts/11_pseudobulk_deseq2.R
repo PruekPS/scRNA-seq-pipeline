@@ -202,19 +202,32 @@ for (ct in names(vst_by_celltype)) {
   shared_genes <- intersect(top_overall, rownames(ct_vst))
   heatmap_mat[shared_genes, ct_cols] <- ct_vst[shared_genes, ct_cols, drop = FALSE]
 }
+# Only pseudo-samples of cell types that were actually fitted: skipped cell types have no
+# VST values, and their all-NA columns used to crash the column clustering (hclust on NA).
+fitted_cols <- meta$pseudo_sample_id[meta$cell_type %in% names(vst_by_celltype)]
+heatmap_mat <- heatmap_mat[, colnames(heatmap_mat) %in% fitted_cols, drop = FALSE]
 heatmap_mat <- heatmap_mat[rowSums(!is.na(heatmap_mat)) > 0, , drop = FALSE]
 heatmap_mat_scaled <- t(scale(t(heatmap_mat)))  # z-score per gene across pseudo-samples
+heatmap_mat_scaled[is.nan(heatmap_mat_scaled)] <- 0  # a gene constant across samples has no z-score; show as 0
 
-col_anno <- HeatmapAnnotation(
-  condition = meta$condition[match(colnames(heatmap_mat_scaled), meta$pseudo_sample_id)],
-  cell_type = meta$cell_type[match(colnames(heatmap_mat_scaled), meta$pseudo_sample_id)]
-)
+col_ct <- meta$cell_type[match(colnames(heatmap_mat_scaled), meta$pseudo_sample_id)]
+col_cond <- meta$condition[match(colnames(heatmap_mat_scaled), meta$pseudo_sample_id)]
+col_anno <- HeatmapAnnotation(condition = col_cond, cell_type = col_ct)
 
+# Genes filtered out in some cell types leave NA gaps; hierarchical clustering can't use
+# them, so in that case keep columns grouped by cell type (split) and ordered by condition.
+has_na <- anyNA(heatmap_mat_scaled)
+if (has_na) cat("  heatmap: some genes untested in some cell types (grey); columns grouped, not clustered\n")
 png(file.path(output_dir, "top_de_genes_heatmap.png"), width = 2400, height = max(1200, 40 * nrow(heatmap_mat_scaled)), res = 200)
 draw(Heatmap(heatmap_mat_scaled, name = "z-score (VST)",
              top_annotation = col_anno,
+             column_split = col_ct,
+             column_order = order(col_ct, col_cond),
+             cluster_columns = !has_na,
+             cluster_rows = !has_na,
              show_column_names = FALSE,
              row_names_gp = grid::gpar(fontsize = 8),
+             column_title_gp = grid::gpar(fontsize = 8),
              na_col = "grey90"))
 dev.off()
 

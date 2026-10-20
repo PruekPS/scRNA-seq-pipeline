@@ -16,15 +16,34 @@ This script reads one or more such sample folders and writes a single
 concatenated .h5ad, with a "sample" column in .obs so multi-sample runs
 can be told apart downstream (e.g. for batch integration later).
 
+split-pipe `--mode comb` output: point --sample-dir at either
+`<comb>/all-sample/DGE_filtered` (one folder, cell_metadata already carries
+each cell's `sample`) OR at the per-sample `<comb>/<sample>/DGE_filtered`
+folders -- never both, or every cell is loaded twice. Cell names are the
+`bc_wells` barcodes (`NN_NN_NN__s<N>`, where s<N> is the sublibrary's
+position in the comb list); they are kept as-is so TCR tables (script 12)
+can be matched to them, and the s<N> tag is copied into obs["sublibrary"]
+-- the real technical batch in split-pool data (every sublibrary contains
+every sample), usable as Harmony's --batch-key.
+
+--sample-sheet CSV: split-pipe only knows sample names, so study design
+columns (patient, timepoint, tissue, condition, ...) come from a small CSV
+with a `sample` column plus any others; they are joined onto every cell.
+Sample names must match the split-pipe sample names exactly; samples with
+cells but no sheet row stop the run.
+
 Usage:
     python 00_load_parse_output.py --sample-dir DGE_filtered/ --output raw.h5ad
     python 00_load_parse_output.py \
         --sample-dir sample1/DGE_filtered/ sample1 \
         --sample-dir sample2/DGE_filtered/ sample2 \
         --output raw.h5ad
+    python 00_load_parse_output.py --sample-dir comb/all-sample/DGE_filtered \
+        --sample-sheet samples.csv --output raw.h5ad
 """
 import argparse
 import pathlib
+import sys
 
 import anndata as ad
 import pandas as pd
@@ -125,6 +144,9 @@ def main():
              "If SAMPLE_NAME is omitted, the parent directory name is used.",
     )
     parser.add_argument("--output", required=True, help="Path to write the combined raw .h5ad")
+    parser.add_argument("--sample-sheet", default=None,
+                        help="Optional CSV with a 'sample' column + design columns (patient, timepoint, ...) "
+                             "joined onto every cell by sample name")
     args = parser.parse_args()
 
     samples = []
@@ -137,7 +159,43 @@ def main():
     if len(samples) == 1:
         combined = samples[0]
     else:
-        combined = ad.concat(samples, join="outer", index_unique="-")
+        # split-pipe barcodes (with their __s<N> tag) are already unique across samples; keep them
+        # untouched so TCR/other per-cell tables can still be matched. Only disambiguate on a clash.
+        names = pd.Index([n for a in samples for n in a.obs_names])
+        if names.is_unique:
+            combined = ad.concat(samples, join="outer")
+        else:
+            print("  WARNING: cell names repeat across --sample-dir folders (same folder twice, or "
+                  "all-sample plus per-sample folders?) -- appending '-<i>' to keep them apart; "
+                  "TCR tables will no longer match these names.")
+            combined = ad.concat(samples, join="outer", index_unique="-")
+
+    sub = combined.obs_names.to_series().str.extract(r"__(s\d+)$")[0]
+    if sub.notna().all():
+        combined.obs["sublibrary"] = pd.Categorical(sub.values)
+        print(f"  sublibrary tag found in cell names: {combined.obs['sublibrary'].nunique()} sublibraries")
+
+    if args.sample_sheet:
+        sheet = pd.read_csv(args.sample_sheet, dtype=str)
+        if "sample" not in sheet.columns:
+            sys.exit(f"--sample-sheet needs a 'sample' column; has {list(sheet.columns)}")
+        if sheet["sample"].duplicated().any():
+            sys.exit(f"--sample-sheet lists a sample twice: {sorted(sheet.loc[sheet['sample'].duplicated(), 'sample'])}")
+        have = set(combined.obs["sample"].astype(str))
+        missing = sorted(have - set(sheet["sample"]))
+        if missing:
+            sys.exit(f"Samples with cells but no --sample-sheet row: {missing}. Names must match split-pipe's "
+                     f"sample names exactly (sheet has {sorted(sheet['sample'])}).")
+        unused = sorted(set(sheet["sample"]) - have)
+        if unused:
+            print(f"  note: sheet rows with no cells (ignored): {unused}")
+        clash = [c for c in sheet.columns if c != "sample" and c in combined.obs.columns]
+        if clash:
+            sys.exit(f"--sample-sheet columns already exist in the cell metadata: {clash}; rename them")
+        lookup = sheet.set_index("sample")
+        for col in lookup.columns:
+            combined.obs[col] = pd.Categorical(combined.obs["sample"].astype(str).map(lookup[col]).values)
+        print(f"  joined sample sheet columns: {list(lookup.columns)}")
 
     print(f"Combined: {combined.n_obs} cells x {combined.n_vars} genes "
           f"across {combined.obs['sample'].nunique()} sample(s)")

@@ -8,7 +8,7 @@ The planted truth is known so the scripts can be checked against it:
   * P1 has 3 expanded CD8 clones present at BOTH time points (planted sharing)
   * 1 "public" clone: exactly 2 T cells in P1 and 2 in P2
   * every other T cell carries a unique clone; ~8% have only a beta chain (orphan)
-  * cell ids follow split-pipe's combined form `<bc>__<sublib>`
+  * cell ids follow split-pipe's combined form `<bc>__s<N>`
 
 AIRR tables use standard AIRR rearrangement fields (sequence_id, locus, v_call, junction_aa, ...) plus
 the per-cell columns split-pipe adds to its TCR output (cell_id, read_count, transcript_count,
@@ -48,7 +48,7 @@ def make_wt(rng):
     for s, (patient, tp) in SAMPLES.items():
         for i in range(CELLS_PER_SAMPLE):
             ct = rng.choice(list(CELL_TYPES), p=list(CELL_TYPES.values()))
-            sub = f"sub{rng.integers(2, 5)}"
+            sub = f"s{rng.integers(1, 4)}"
             bc = f"{rng.integers(1, 49):02d}_{rng.integers(1, 97):02d}_{rng.integers(1, 97):02d}"
             rows.append({"cell": f"{bc}__{sub}", "sample": s, "patient": patient, "timepoint": tp,
                          "cell_type_v2": ct, "sublibrary": sub})
