@@ -1,73 +1,50 @@
-# split-pipe — command-line alternative to Trailmaker
+# split-pipe (Parse Biosciences) — not included here
 
-Trailmaker (cloud) is the primary demultiplexing path for this project. This
-folder holds the setup for **split-pipe**, Parse Biosciences' command-line
-pipeline, kept ready as a HiPerGator-native alternative — same barcode
-correction / alignment / quantification logic as Trailmaker's Pipeline
-module, run as a batch SLURM job instead of through the web UI.
+**split-pipe** is Parse Biosciences' own command-line pipeline for Evercode
+data: barcode correction, alignment, and counting, the same logic as
+Parse's cloud tool Trailmaker. It is licensed software (Parse's intellectual
+property), available to Evercode customers through Parse's
+[Pipeline Download Request Form](https://www.parsebiosciences.com/pipeline-download/).
+**No split-pipe code, installer, or run script is distributed in this
+repository.** Install and run it by following Parse's own documentation
+(Support Suite: "Pipeline Installation", "Running the Pipeline", "Pipeline
+Options"), on an HPC compute node rather than a login node.
 
-## Why keep both
+This pipeline starts where split-pipe stops. What it expects from
+split-pipe's output (checked against split-pipe v1.9.0 and real Parse output):
 
-- Trailmaker: no-code, good for quick looks and sharing with collaborators.
-- split-pipe: data and compute never leave HiPerGator, fully scriptable,
-  batchable across many sublibraries, fits this repo's step-numbered style.
+## Whole transcriptome (WT)
 
-## Getting the software
+- Each sublibrary is processed separately, then merged with split-pipe's
+  combine mode. Cells are named by their barcode wells, `NN_NN_NN`; after
+  combining, each name gets a sublibrary tag `__s1`, `__s2`, ... from the
+  sublibrary's position in the combine list.
+- `scripts/00_load_parse_output.py` reads a `DGE_filtered/` folder
+  (`count_matrix.mtx`, `all_genes.csv`, `cell_metadata.csv`). Point it at
+  either `<combined>/all-sample/DGE_filtered` or the per-sample folders,
+  never both (all-sample holds the same cells again).
+- Study design (patient, time point, tissue, ...) is not in split-pipe's
+  output: pass it with `--sample-sheet` (a CSV with a `sample` column whose
+  names match the split-pipe sample names exactly).
+- The `__sN` tag becomes `obs["sublibrary"]`, the technical batch to give
+  Harmony (`02b_harmony_integration.py --batch-key sublibrary`).
 
-split-pipe is licensed, customer-gated software — it is **not** vendored in
-this repo (see `.gitignore`) and cannot be fetched by an agent without your
-Parse account credentials. To obtain it:
+## Evercode TCR
 
-1. Request access via Parse's [Pipeline Download Request
-   Form](https://www.parsebiosciences.com/pipeline-download/) (requires a
-   Parse Biosciences customer account tied to your Evercode kit purchase).
-2. The most recent version publicly documented in third-party HPC deployment
-   notes at the time this was written is **1.5.0**; confirm the true current
-   version from the download portal itself, since Parse does not publish a
-   public changelog.
-3. Download the tarball to your own machine or directly to HiPerGator (e.g.
-   via UF Research Computing's OnDemand file browser) into your project's
-   `software/split-pipe/` directory under your HiPerGator group/user storage
-   path (`/blue/<group>/<user>/` — see your own local notes for the actual
-   value; not published in this repo).
+- Each TCR sublibrary is run against its matching WT sublibrary (split-pipe's
+  parent-directory option), then combined. **Combine TCR sublibraries in the
+  same order as the WT sublibraries**, because the `__sN` tags come from list
+  position; `scripts/12_tcr_attach.py` checks every sublibrary and stops if
+  one does not line up.
+- `scripts/12_tcr_attach.py` reads the per-sample AIRR tables
+  (`<sample>/TCR_filtered/tcr_annotation_airr.tsv`, or `.tsv.gz`), skipping
+  the duplicate `all-sample` folder.
+- TCR libraries need reads long enough to cover the CDR3 (read 1) and the cell
+  barcodes (read 2); see Parse's Evercode TCR documentation for the required
+  sequencing configuration.
 
-## Install on HiPerGator
+## Testing without real data
 
-Everything below stays under your HiPerGator group/user project root — no
-system-wide installs, no shared/other-user paths.
-
-```bash
-ssh <your-hipergator-alias>
-cd /blue/<group>/<user>
-bash scRNA-pipeline/pipeline/split-pipe/install_hipergator.sh \
-     /blue/<group>/<user>/software/split-pipe/ParseBiosciences-Pipeline.<version>.zip
-```
-
-See [`install_hipergator.sh`](install_hipergator.sh) — it creates a dedicated
-mamba env, unzips the pipeline, and pip-installs it exactly as Parse's own
-install script does, all scoped to your project root (set via the
-`SPLITPIPE_PROJECT_ROOT` environment variable — see the script).
-
-## Running it
-
-[`run_split_pipe_template.slurm`](run_split_pipe_template.slurm) is a SLURM
-batch template: modest CPU/RAM allocation (no GPU — this step doesn't use
-one), reads raw FASTQ from a `raw/` input path and writes to an `out/` path,
-both meant to sit under your HiPerGator group/user project space.
-Fill in the placeholders (account, QoS, paths, kit chemistry, sample names,
-genome reference) before submitting with `sbatch`.
-
-## Generating input FASTQ from a raw Illumina run (bcl2fastq)
-
-If starting from raw BCL files rather than FASTQ, Parse's guidance (see
-[Generating fastq files with
-bcl2fastq](https://support.parsebiosciences.com/hc/en-us/articles/360058912372-Generating-fastq-files-with-bcl2fastq),
-vendor documentation) is:
-
-- Run `bcl2fastq` with **`--no-lane-splitting`** so reads aren't split across
-  lanes before split-pipe sees them.
-- Do **not** set an adapter-trimming sequence — Parse explicitly warns this
-  can trim into the cell-barcode region of Read 2, corrupting demultiplexing
-  downstream.
-- Use a `SampleSheet.csv` with the Evercode kit's documented index sequences
-  (from the kit's user manual), one row per sublibrary.
+`tests/synthetic_splitpipe.py` writes synthetic data in this output layout and
+`tests/integration_smoke.sh` runs the whole chain on it, checking the results
+against the planted truth.

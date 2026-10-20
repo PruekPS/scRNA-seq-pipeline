@@ -65,8 +65,9 @@ included here; get it from Parse.
 - **Parse's split-pool barcoding** ([Rosenberg et al., *Science* 2018](https://doi.org/10.1126/science.aam8999))
   requires vendor-specific demultiplexing before any custom code can run —
   either through **Trailmaker** (cloud, no-code) or **split-pipe** (CLI,
-  same logic, run as a HiPerGator batch job — see
-  [`pipeline/split-pipe/`](pipeline/split-pipe/)).
+  same logic, run as a HiPerGator batch job). split-pipe is Parse's licensed
+  software and is not included here; [`pipeline/split-pipe/`](pipeline/split-pipe/)
+  only describes what this pipeline expects from its output.
 - QC thresholds are **adaptive (MAD-based)** rather than fixed cutoffs,
   following [OSCA](https://bioconductor.org/books/3.13/OSCA.basic/) and the
   SCTK-QC pipeline ([Hong et al., *Nat Commun* 2022](https://doi.org/10.1038/s41467-022-29212-9)).
@@ -95,7 +96,7 @@ scripts/               00-04: core pipeline (load, QC, normalize/PCA, cluster, a
                                diversity, clone sharing, phenotype of expanded clones
 pipeline/               SLURM drivers (run_pipeline.slurm, run_downstream.slurm,
                         run_trajectory.slurm, run_pseudobulk_de.slurm, run_tcr.slurm) +
-                        pipeline/split-pipe/ (HiPerGator setup for Parse's CLI demux)
+                        pipeline/split-pipe/ (notes on split-pipe's output; software not included)
 envs/environment.yml    main conda env (Python 3.11 scanpy + scirpy, R/Seurat/CellChat/DESeq2)
 envs/environment_trajectory.yml  separate Python 3.12 env for CellRank (scripts 08-09)
 tests/                  smoke-test convention and gitignored real/public test data
