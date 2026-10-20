@@ -175,6 +175,12 @@ def main():
         "--sample-metadata-key", default="sample_id", dest="sample_metadata_key",
         help="Column in --sample-metadata holding the sample name (matched to .obs['sample'])",
     )
+    parser.add_argument(
+        "--exclude-sublibraries", nargs="+", default=None, dest="exclude_sublibraries", metavar="sN",
+        help="Drop cells from these split-pipe sublibraries (e.g. s1), as numbered by the "
+             "__sN barcode suffix of --mode comb output -- for a sublibrary with a library-level "
+             "artifact. Order follows the --sublibraries list given to split-pipe comb.",
+    )
     args = parser.parse_args()
 
     samples = []
@@ -196,6 +202,19 @@ def main():
     if "sublibrary" not in combined.obs and sublib.notna().all():
         combined.obs["sublibrary"] = pd.Categorical("s" + sublib.astype(str), ordered=False)
         print(f"  Found {combined.obs['sublibrary'].nunique()} split-pipe sublibraries in barcodes")
+
+    if args.exclude_sublibraries:
+        if "sublibrary" not in combined.obs:
+            raise SystemExit("--exclude-sublibraries given but no 'sublibrary' column could be derived "
+                             "(expects split-pipe comb barcodes ending in __sN)")
+        unknown = sorted(set(args.exclude_sublibraries) - set(combined.obs["sublibrary"].astype(str)))
+        if unknown:
+            raise SystemExit(f"--exclude-sublibraries {unknown} not present; have "
+                             f"{sorted(combined.obs['sublibrary'].astype(str).unique())}")
+        drop = combined.obs["sublibrary"].astype(str).isin(args.exclude_sublibraries).values
+        print(f"  Excluding sublibraries {args.exclude_sublibraries}: {drop.sum()} cells removed")
+        combined = combined[~drop].copy()
+        combined.obs["sublibrary"] = combined.obs["sublibrary"].cat.remove_unused_categories()
 
     if args.sample_metadata:
         combined.obs = attach_sample_metadata(combined.obs, args.sample_metadata, args.sample_metadata_key)

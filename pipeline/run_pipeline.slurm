@@ -37,6 +37,16 @@
 # (default human) and RESOLUTION (default 0.6, the Leiden resolution 04b
 # annotates) can also be set as environment variables at submit time.
 #
+# Optional steps, switched on by environment variables at submit time:
+#   EXCLUDE_SUBLIBS="s1 ..."  drop split-pipe sublibraries in step 0 (library artifact)
+#   HARMONY_KEY=sample        run 02b Harmony on that obs column and cluster on
+#                             X_pca_harmony (embedding only; counts untouched)
+#   CELLTYPIST_MODEL=/path/Immune_All_Low.pkl
+#                             run 04c CellTypist after 04b (majority vote over
+#                             leiden_r${RESOLUTION}); CELLTYPIST_MODEL2 adds a
+#                             second model (e.g. Immune_All_High) as celltypist_high_*
+#   e.g. sbatch --export=ALL,HARMONY_KEY=sample,CELLTYPIST_MODEL=... pipeline/run_pipeline.slurm ...
+#
 # QC (step 1) runs Scrublet per-'sample' batch by default (01_qc_filter.py's
 # --batch-key defaults to "sample") -- this is both more correct (Scrublet
 # assumes a single library per run) and far lower peak memory than the
@@ -55,6 +65,10 @@ SAMPLE_METADATA="${5:-}"
 SAMPLE_METADATA_KEY="${SAMPLE_METADATA_KEY:-sample_id}"
 SPECIES="${SPECIES:-human}"
 RESOLUTION="${RESOLUTION:-0.6}"
+EXCLUDE_SUBLIBS="${EXCLUDE_SUBLIBS:-}"
+HARMONY_KEY="${HARMONY_KEY:-}"
+CELLTYPIST_MODEL="${CELLTYPIST_MODEL:-}"
+CELLTYPIST_MODEL2="${CELLTYPIST_MODEL2:-}"
 
 mkdir -p "${OUT_DIR}"
 
@@ -67,6 +81,10 @@ echo "repo: ${REPO_ROOT} @ $(cat REVISION 2>/dev/null || git rev-parse --short H
 META_ARGS=()
 if [[ -n "${SAMPLE_METADATA}" ]]; then
   META_ARGS=(--sample-metadata "${SAMPLE_METADATA}" --sample-metadata-key "${SAMPLE_METADATA_KEY}")
+fi
+if [[ -n "${EXCLUDE_SUBLIBS}" ]]; then
+  read -r -a _sublibs <<< "${EXCLUDE_SUBLIBS}"
+  META_ARGS+=(--exclude-sublibraries "${_sublibs[@]}")
 fi
 
 echo "=== [0/4] Load raw Parse output (${RAW_DGE_DIR}) ==="
@@ -89,11 +107,25 @@ python scripts/02_normalize_pca.py \
   --output "${OUT_DIR}/02_pca.h5ad" \
   --plot-dir "${OUT_DIR}/pca_plots"
 
-echo "=== [3/4] Clustering (Leiden resolution scan + UMAP) ==="
+CLUSTER_INPUT="${OUT_DIR}/02_pca.h5ad"
+USE_REP="X_pca"
+if [[ -n "${HARMONY_KEY}" ]]; then
+  echo "=== [2b] Harmony integration on '${HARMONY_KEY}' ==="
+  python scripts/02b_harmony_integration.py \
+    --input "${OUT_DIR}/02_pca.h5ad" \
+    --output "${OUT_DIR}/02b_harmony.h5ad" \
+    --plot-dir "${OUT_DIR}/harmony_plots" \
+    --batch-key "${HARMONY_KEY}"
+  CLUSTER_INPUT="${OUT_DIR}/02b_harmony.h5ad"
+  USE_REP="X_pca_harmony"
+fi
+
+echo "=== [3/4] Clustering (Leiden resolution scan + UMAP on ${USE_REP}) ==="
 python scripts/03_cluster.py \
-  --input "${OUT_DIR}/02_pca.h5ad" \
+  --input "${CLUSTER_INPUT}" \
   --output "${OUT_DIR}/03_clustered.h5ad" \
-  --plot-dir "${OUT_DIR}/cluster_plots"
+  --plot-dir "${OUT_DIR}/cluster_plots" \
+  --use-rep "${USE_REP}"
 
 echo "=== [4/4] Confidence-gated annotation (04b, ${SPECIES}, leiden_r${RESOLUTION}) ==="
 python scripts/04b_better_annotation.py \
@@ -104,4 +136,26 @@ python scripts/04b_better_annotation.py \
   --species "${SPECIES}" \
   --markers-csv "${OUT_DIR}/top_markers.csv"
 
-echo "=== Done. Final object: ${OUT_DIR}/04b_annotated.h5ad ==="
+FINAL="${OUT_DIR}/04b_annotated.h5ad"
+if [[ -n "${CELLTYPIST_MODEL}" ]]; then
+  echo "=== [4c] CellTypist ($(basename "${CELLTYPIST_MODEL}"), majority vote over leiden_r${RESOLUTION}) ==="
+  python scripts/04c_celltypist_annotation.py \
+    --input "${FINAL}" \
+    --output "${OUT_DIR}/04c_celltypist.h5ad" \
+    --model "${CELLTYPIST_MODEL}" \
+    --over-clustering "leiden_r${RESOLUTION}" \
+    --plot-dir "${OUT_DIR}/celltypist_plots"
+  FINAL="${OUT_DIR}/04c_celltypist.h5ad"
+  if [[ -n "${CELLTYPIST_MODEL2}" ]]; then
+    echo "=== [4c] CellTypist second model ($(basename "${CELLTYPIST_MODEL2}")) ==="
+    python scripts/04c_celltypist_annotation.py \
+      --input "${FINAL}" \
+      --output "${FINAL}" \
+      --model "${CELLTYPIST_MODEL2}" \
+      --over-clustering "leiden_r${RESOLUTION}" \
+      --prefix celltypist_high \
+      --plot-dir "${OUT_DIR}/celltypist_plots"
+  fi
+fi
+
+echo "=== Done. Final object: ${FINAL} ==="

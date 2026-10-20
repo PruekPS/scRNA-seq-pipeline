@@ -83,3 +83,11 @@ dependencies:
   # `Rscript -e 'remotes::install_version("NMF", version="0.28", repos="https://cloud.r-project.org")'`
   # -- which compiles cleanly on HiPerGator's toolchain (unlike svglite,
   # which needed the conda-precompiled version above).
+  - pip
+  - pip:
+      # For scripts/04c_celltypist_annotation.py (reference-based immune
+      # annotation). PyPI wheel; installed on HiPerGator 2026-10-20 with
+      # `python -m pip install celltypist==1.6.3`, which added only
+      # openpyxl/et-xmlfile and left scanpy/pandas/numpy/sklearn untouched.
+      # Models are downloaded separately (see the 04c docstring).
+      - celltypist==1.6.3
