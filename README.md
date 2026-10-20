@@ -148,3 +148,8 @@ expression and clonotypes. **Not covered:** demultiplexing itself (Parse's
 software), RNA velocity (standard Parse output lacks spliced/unspliced counts),
 reference-based annotation, and the biological interpretation of your
 results — a scientific call only you can make.
+
+## License
+
+MIT — see [LICENSE](LICENSE). This covers the code and documentation in this
+repository only; split-pipe and the other tools it runs keep their own licenses.
