@@ -15,6 +15,14 @@ validated in this repo (1M PBMC dataset):
       the same bc_wells string; standard AIRR fields + split-pipe's per-cell columns.
   Also: tcr_persub/s<N>/all-sample/... with bare NN_NN_NN ids (per-sublibrary runs) and
         tcr_comb_misordered/ (TCR combined with sublibraries s2/s3 swapped -- must be refused).
+  Unfiltered: <wt_comb>/{all-sample,<sample>}/DGE_unfiltered/ = the cells plus EMPTY_PER_SAMPLE
+        near-empty barcodes per sample (ambient profile, ~40 counts each), for the
+        one-cutoff loading path (00_load --min-counts).
+  wt_persub/s<N>/: per-sublibrary run folders as 00a_check_cell_calls.py reads them
+        (agg_sample_summary.csv + <sample>/DGE_unfiltered/cell_metadata.csv). Every sample's
+        cutoff sits between empty barcodes and cells, except UNSTABLE_SAMPLE in sublibrary
+        UNSTABLE_SUBLIB, whose cutoff is planted at the 90th percentile of its cells -- the
+        split-pipe failure that 00a must flag.
 
 Planted truth (truth_cells.csv, truth.json) so results can be checked, not just run:
   6 cell types with their real marker genes (from 04b's human dictionary);
@@ -38,6 +46,9 @@ import scipy.sparse as sp
 SAMPLES = {"P1_pre": ("P1", "pre"), "P1_6h": ("P1", "6h"), "P2_pre": ("P2", "pre"), "P2_6h": ("P2", "6h")}
 CELLS_PER_SAMPLE = 500
 N_SUBLIBS = 3
+EMPTY_PER_SAMPLE = 600
+GOOD_CUTOFF = 200  # transcripts; empty barcodes have ~40, cells several hundred or more
+UNSTABLE_SAMPLE, UNSTABLE_SUBLIB = "P2_6h", 3
 TYPES = {  # proportion, marker genes (04b human dictionary)
     "CD4 T cell": (0.28, ["IL7R", "CD3D", "CD3E", "CD4"]),
     "CD8 T cell": (0.22, ["CD8A", "CD8B", "CD3D", "CD3E"]),
@@ -57,8 +68,8 @@ def plate_well(wind: int, cols: int = 12) -> str:
     return "ABCDEFGHIJKLMNOP"[(wind - 1) // cols] + str((wind - 1) % cols + 1)
 
 
-def make_cells(rng):
-    rows, used = [], set()
+def make_cells(rng, used):
+    rows = []
     types, probs = list(TYPES), np.array([v[0] for v in TYPES.values()])
     for si, (s, (patient, tp)) in enumerate(SAMPLES.items()):
         for _ in range(CELLS_PER_SAMPLE):
@@ -71,6 +82,23 @@ def make_cells(rng):
                     break
             rows.append({"bc_wells": f"{w1:02d}_{w2:02d}_{w3:02d}__s{sub}", "sample": s, "patient": patient,
                          "timepoint": tp, "true_type": rng.choice(types, p=probs / probs.sum()), "sublib": sub,
+                         "bc1_wind": w1, "bc2_wind": w2, "bc3_wind": w3})
+    return pd.DataFrame(rows)
+
+
+def make_empty_barcodes(rng, used):
+    """Near-empty barcodes (ambient RNA only), as found in DGE_unfiltered, on unused well combos."""
+    rows = []
+    for si, s in enumerate(SAMPLES):
+        for _ in range(EMPTY_PER_SAMPLE):
+            sub = int(rng.integers(1, N_SUBLIBS + 1))
+            while True:
+                w1 = 12 * si + int(rng.integers(1, 13))
+                w2, w3 = int(rng.integers(1, 97)), int(rng.integers(1, 97))
+                if (sub, w1, w2, w3) not in used:
+                    used.add((sub, w1, w2, w3))
+                    break
+            rows.append({"bc_wells": f"{w1:02d}_{w2:02d}_{w3:02d}__s{sub}", "sample": s, "sublib": sub,
                          "bc1_wind": w1, "bc2_wind": w2, "bc3_wind": w3})
     return pd.DataFrame(rows)
 
@@ -96,7 +124,32 @@ def make_counts(cells, rng):
     rate *= rng.lognormal(0, 0.35, (n, 1))
     X = sp.csr_matrix(rng.poisson(rate).astype(np.int32))
     genes_df = pd.DataFrame({"gene_id": [f"ENSGSYN{i:07d}" for i in range(g)], "gene_name": genes, "genome": "hg38"})
-    return X, genes_df
+    return X, genes_df, base
+
+
+def make_empty_counts(n, base, rng):
+    return sp.csr_matrix(rng.poisson(np.tile(base * 0.03, (n, 1))).astype(np.int32))
+
+
+def write_persub_runs(root: pathlib.Path, cells, empties, X, X_empty):
+    """Per-sublibrary split-pipe run folders, as 00a_check_cell_calls.py reads them."""
+    tscp = np.concatenate([np.asarray(X.sum(axis=1)).ravel(), np.asarray(X_empty.sum(axis=1)).ravel()])
+    bc = pd.concat([cells[["bc_wells", "sample", "sublib"]], empties[["bc_wells", "sample", "sublib"]]],
+                   ignore_index=True).assign(tscp_count=tscp, is_cell=[True] * len(cells) + [False] * len(empties))
+    bc["bc_wells"] = bc["bc_wells"].str.replace(r"__s\d+$", "", regex=True)
+    for sub, sdf in bc.groupby("sublib"):
+        run = root / f"s{sub}"
+        summary = []
+        for s, df in sdf.groupby("sample"):
+            cutoff = float(GOOD_CUTOFF)
+            if s == UNSTABLE_SAMPLE and sub == UNSTABLE_SUBLIB:
+                cutoff = float(np.percentile(df.loc[df["is_cell"], "tscp_count"], 90))
+            summary.append({"sample": s, "number_of_cells": int((df["tscp_count"] >= cutoff).sum()),
+                            "cell_tscp_cutoff": cutoff})
+            d = run / s / "DGE_unfiltered"
+            d.mkdir(parents=True, exist_ok=True)
+            df[["bc_wells", "sample", "tscp_count"]].to_csv(d / "cell_metadata.csv", index=False)
+        pd.DataFrame(summary).to_csv(run / "agg_sample_summary.csv", index=False)
 
 
 def cell_metadata(cells, X):
@@ -157,13 +210,26 @@ def write_tcr_tree(root: pathlib.Path, tcr: pd.DataFrame):
 
 def main(out: pathlib.Path):
     rng = np.random.default_rng(11)
-    cells = make_cells(rng)
-    X, genes_df = make_counts(cells, rng)
+    used = set()
+    cells = make_cells(rng, used)
+    X, genes_df, base = make_counts(cells, rng)
     md = cell_metadata(cells, X)
     for s in SAMPLES:
         m = (cells["sample"] == s).to_numpy()
         write_dge(out / "wt_comb" / s / "DGE_filtered", X[m], genes_df, md[m])
     write_dge(out / "wt_comb" / "all-sample" / "DGE_filtered", X, genes_df, md)
+
+    # Separate generator so the empty barcodes leave the cells, counts and TCR draws unchanged.
+    rng_empty = np.random.default_rng(12)
+    empties = make_empty_barcodes(rng_empty, used)
+    X_empty = make_empty_counts(len(empties), base, rng_empty)
+    X_unf = sp.vstack([X, X_empty]).tocsr()
+    md_unf = pd.concat([md, cell_metadata(empties, X_empty)], ignore_index=True)
+    for s in SAMPLES:
+        m = (md_unf["sample"] == s).to_numpy()
+        write_dge(out / "wt_comb" / s / "DGE_unfiltered", X_unf[m], genes_df, md_unf[m])
+    write_dge(out / "wt_comb" / "all-sample" / "DGE_unfiltered", X_unf, genes_df, md_unf)
+    write_persub_runs(out / "wt_persub", cells, empties, X, X_empty)
 
     tcr, truth_clone = make_tcr(cells, rng)
     write_tcr_tree(out / "tcr_comb", tcr)
@@ -181,7 +247,9 @@ def main(out: pathlib.Path):
         out / "truth_cells.csv", index=False)
     json.dump({"planted_de_genes": [f"DEG{i}" for i in range(1, 11)],
                "patient_effect_genes": [f"PATG{i}" for i in range(1, 31)],
-               "n_cells": int(len(cells)), "n_tcr_cells": int(tcr["cell_id"].nunique())},
+               "n_cells": int(len(cells)), "n_tcr_cells": int(tcr["cell_id"].nunique()),
+               "n_empty_barcodes": int(len(empties)), "good_cutoff": GOOD_CUTOFF,
+               "unstable_cutoff": {"sample": UNSTABLE_SAMPLE, "run": f"s{UNSTABLE_SUBLIB}"}},
               open(out / "truth.json", "w"), indent=2)
     print(f"wrote {len(cells)} cells x {X.shape[1]} genes, {tcr['cell_id'].nunique()} TCR cells -> {out}")
 

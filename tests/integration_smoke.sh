@@ -22,6 +22,13 @@ step "00 load all-sample/DGE_filtered + sample sheet"
 python scripts/00_load_parse_output.py --sample-dir "${F}/wt_comb/all-sample/DGE_filtered" all-sample \
   --sample-sheet "${F}/sample_sheet.csv" --output "${R}/00_raw.h5ad"
 
+step "00a check split-pipe cell calls (planted unstable cutoff must be flagged)"
+python scripts/00a_check_cell_calls.py --run-dir "${F}"/wt_persub/s* --output-dir "${R}/cell_call_check"
+
+step "00 load all-sample/DGE_unfiltered with one cutoff (optional path)"
+python scripts/00_load_parse_output.py --sample-dir "${F}/wt_comb/all-sample/DGE_unfiltered" all-sample \
+  --min-counts 200 --min-genes 100 --sample-sheet "${F}/sample_sheet.csv" --output "${R}/00_raw_unfiltered.h5ad"
+
 step "01 QC (per-sample Scrublet)"
 python scripts/01_qc_filter.py --input "${R}/00_raw.h5ad" --output "${R}/01_filtered.h5ad" --plot-dir "${R}/qc_plots"
 

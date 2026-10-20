@@ -59,13 +59,14 @@ annotation, TCR, paired DE — and **checks every result against the planted
 truth**, ending with a list like:
 
 ```
+PASS  00a flags the planted unstable cutoff: flagged [('s1', 'P2_6h'), ('s2', 'P2_6h'), ('s3', 'P2_6h')]
 PASS  04b annotation matches planted types: 99.7% of 933 confidently labeled cells
 PASS  12 combined: match rate: 98.1% of 903 TCR cells (QC removed 38 WT cells)
 PASS  12 mis-ordered sublibraries refused: no output written
 PASS  13 three expanded P1 clones found once each and shared pre/6h
 PASS  11 significant genes are all planted 6h genes: false hits: []
 ...
-15/15 checks passed
+17/17 checks passed
 ```
 
 It takes about two minutes. Run it after installing, and again after changing

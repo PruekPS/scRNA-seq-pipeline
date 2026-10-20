@@ -38,6 +38,12 @@
 # patient, timepoint, ...) via the SAMPLE_SHEET environment variable:
 #   SAMPLE_SHEET=samples.csv sbatch ... pipeline/run_pipeline.slurm <comb_out>/all-sample/DGE_filtered out/ all-sample
 #
+# If split-pipe's per-sample cell calls are unreliable (check with
+# scripts/00a_check_cell_calls.py), give DGE_unfiltered instead and one
+# cutoff for every sample via MIN_COUNTS / MIN_GENES (docs/03-your-data.md):
+#   SAMPLE_SHEET=samples.csv MIN_COUNTS=500 MIN_GENES=300 sbatch ... \
+#     pipeline/run_pipeline.slurm <comb_out>/all-sample/DGE_unfiltered out/ all-sample
+#
 # QC (step 1) runs Scrublet per-'sample' batch by default (01_qc_filter.py's
 # --batch-key defaults to "sample") -- this is both more correct (Scrublet
 # assumes a single library per run) and far lower peak memory than the
@@ -66,6 +72,7 @@ SHEET_ARG=()
 python scripts/00_load_parse_output.py \
   --sample-dir "${RAW_DGE_DIR}" "${SAMPLE_NAME}" \
   ${SHEET_ARG[@]+"${SHEET_ARG[@]}"} \
+  --min-counts "${MIN_COUNTS:-0}" --min-genes "${MIN_GENES:-0}" \
   --output "${OUT_DIR}/00_raw.h5ad"
 
 echo "=== [1/4] QC filtering (MAD=${MAD}) ==="

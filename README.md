@@ -82,7 +82,7 @@ page 1 explains each one, page 11 every argument.
 | Steps | Status |
 |---|---|
 | load, QC, normalize, Harmony, cluster, annotate, CellChat | **validated on real Parse data at full scale**: Parse's public 1M PBMC dataset, 987,585 cells → 907,696 after QC → 694,803 confidently annotated → 291 significant interactions across 19 pathways ([report](docs/reference/real-data-validation.md)) |
-| differential expression (incl. paired designs), T-cell receptors | **tested on synthetic data in split-pipe's exact output format**, with a planted truth: 15/15 checks pass ([page 4](docs/04-test-small-first.md)); not yet on real data |
+| differential expression (incl. paired designs), T-cell receptors | **tested on synthetic data in split-pipe's exact output format**, with a planted truth: 17/17 checks pass ([page 4](docs/04-test-small-first.md)); not yet on real data |
 | trajectories | built and checked against CellRank's documentation; not yet run ([design](docs/reference/trajectory-design.md)) |
 
 Each validated step is also compared against an alternative method — fixed vs.
@@ -97,6 +97,7 @@ permutation test vs. naive ranking — with the numbers in
 ```
 scripts/          the pipeline (Python; R for CellChat, DESeq2 and Trailmaker conversion)
   00_load_parse_output.py      split-pipe/Trailmaker output -> .h5ad, sample sheet, sublibrary
+  00a_check_cell_calls.py      optional: are split-pipe's per-sample cell calls reliable? (page 3)
   00b_seurat_to_dge_format.R   Trailmaker Seurat export -> flat files
   01_qc_filter.py              adaptive QC thresholds, doublets per sample
   02_normalize_pca.py          normalize, highly variable genes, PCA

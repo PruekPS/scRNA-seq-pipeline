@@ -33,6 +33,19 @@ check("sample sheet joined", {"patient", "timepoint"} <= set(obs.columns) and ob
 check("sublibrary tagged from barcode", "sublibrary" in obs and obs["sublibrary"].nunique() == 3,
       f"{sorted(obs['sublibrary'].astype(str).unique())}")
 
+# 00a + optional unfiltered path: the planted bad cutoff is flagged, and one cutoff on
+# DGE_unfiltered recovers exactly the real cells (no empty barcodes)
+cc = pd.read_csv(R / "cell_call_check" / "cell_call_check.csv").fillna({"flag": ""})
+flagged = {(r["run"], r["sample"]) for _, r in cc[cc["flag"] != ""].iterrows()}
+want = planted["unstable_cutoff"]
+check("00a flags the planted unstable cutoff", (want["run"], want["sample"]) in flagged
+      and {s for _, s in flagged} == {want["sample"]}, f"flagged {sorted(flagged)}")
+u = ad.read_h5ad(R / "00_raw_unfiltered.h5ad")
+check("00 --min-counts on DGE_unfiltered keeps exactly the real cells",
+      set(u.obs_names) == set(truth.index) and u.uns.get("load_cell_cutoff", {}).get("min_counts") == 200,
+      f"{u.n_obs:,} kept of {planted['n_cells'] + planted['n_empty_barcodes']:,} barcodes "
+      f"({planted['n_cells']:,} real cells)")
+
 # 04b: annotation agrees with the planted cell types (confident labels only)
 lab = obs["cell_type_v2"].astype(str)
 conf = ~lab.str.startswith("Ambiguous")

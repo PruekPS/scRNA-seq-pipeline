@@ -58,6 +58,8 @@ workers before asking for more memory.
 | Symptom | Meaning | What to do |
 |---|---|---|
 | loader stops: `Samples with cells but no --sample-sheet row` | sheet names differ from split-pipe's sample names | copy the names exactly (case, underscores) |
+| some samples have only a few hundred cells, each with tens of thousands of transcripts | split-pipe's per-sample cell cutoff landed above the main population | run `00a_check_cell_calls.py`; if it flags samples, load `DGE_unfiltered` with `--min-counts`/`--min-genes` (page 3) |
+| loader warns `DGE_unfiltered holds every barcode ... no --min-counts` | unfiltered folder loaded without a cutoff, so empty barcodes come in too | add `--min-counts N --min-genes M` (page 3) |
 | about a third of genes have IDs instead of names | those genes have a blank `gene_name` in Parse's output | expected; the loader falls back to `gene_id` |
 | Harmony step: `Value passed for key 'X_pca_harmony' is of incorrect shape` | harmonypy 2.0.0 is installed | the environment pins 0.0.10; reinstall it |
 | many `Ambiguous (A / B)` labels | the marker sets cannot separate those clusters confidently | look at `top_markers.csv` for those clusters; for non-blood tissue, extend the marker dictionary in `04b_better_annotation.py` |

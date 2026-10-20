@@ -32,6 +32,16 @@ with a `sample` column plus any others; they are joined onto every cell.
 Sample names must match the split-pipe sample names exactly; samples with
 cells but no sheet row stop the run.
 
+--min-counts / --min-genes (optional): one cell cutoff for every sample.
+split-pipe calls cells with a separate knee cutoff per sample and per
+sublibrary. When a sample's count distribution has no clean knee (e.g. a
+high-UMI tail of activated cells), that cutoff can land far above the main
+population and DGE_filtered keeps only a few hundred cells. The fix is to
+load DGE_unfiltered (same three files, every barcode) with these options,
+so every sample gets the same threshold. Check whether you need it with
+00a_check_cell_calls.py; see docs/03-your-data.md. Off (0) by default, so
+DGE_filtered input is loaded unchanged.
+
 Usage:
     python 00_load_parse_output.py --sample-dir DGE_filtered/ --output raw.h5ad
     python 00_load_parse_output.py \
@@ -40,12 +50,16 @@ Usage:
         --output raw.h5ad
     python 00_load_parse_output.py --sample-dir comb/all-sample/DGE_filtered \
         --sample-sheet samples.csv --output raw.h5ad
+    # split-pipe's per-sample cell calls unreliable: one cutoff for all samples
+    python 00_load_parse_output.py --sample-dir comb/all-sample/DGE_unfiltered \
+        --min-counts 500 --min-genes 300 --sample-sheet samples.csv --output raw.h5ad
 """
 import argparse
 import pathlib
 import sys
 
 import anndata as ad
+import numpy as np
 import pandas as pd
 import scipy.io
 import scipy.sparse
@@ -90,7 +104,8 @@ def pick_column(df: pd.DataFrame, candidates: list[str], what: str) -> str:
     raise KeyError(f"None of {candidates} found for {what}; columns present: {list(df.columns)}")
 
 
-def load_one_sample(sample_dir: pathlib.Path, sample_name: str) -> ad.AnnData:
+def load_one_sample(sample_dir: pathlib.Path, sample_name: str,
+                    min_counts: int = 0, min_genes: int = 0) -> ad.AnnData:
     matrix_path = find_matrix_file(sample_dir)
     genes_path = find_genes_file(sample_dir)
     cells_path = find_cells_file(sample_dir)
@@ -122,6 +137,19 @@ def load_one_sample(sample_dir: pathlib.Path, sample_name: str) -> ad.AnnData:
             f"/ all_genes rows ({len(genes)}) in {sample_dir} -- wrong files paired together?"
         )
 
+    if min_counts or min_genes:
+        # Computed from the matrix itself, not cell_metadata's tscp_count/gene_count,
+        # so the cutoff means the same thing whichever pipeline wrote the folder.
+        counts = np.asarray(X.sum(axis=1)).ravel()
+        genes_per_cell = np.diff(X.indptr)
+        keep = (counts >= min_counts) & (genes_per_cell >= min_genes)
+        print(f"  cell cutoff (>= {min_counts} counts, >= {min_genes} genes): "
+              f"kept {int(keep.sum()):,} of {len(keep):,} barcodes")
+        X, cells = X[keep], cells.iloc[keep]
+    elif "unfiltered" in sample_dir.name.lower():
+        print(f"  WARNING: {sample_dir.name} holds every barcode, including empty ones, and no "
+              f"--min-counts/--min-genes was given -- set a cutoff (see 00a_check_cell_calls.py).")
+
     adata = ad.AnnData(X=X, obs=cells, var=genes.set_index(gene_name_col))
     adata.var_names_make_unique()
     if "sample" in adata.obs.columns:
@@ -147,6 +175,12 @@ def main():
     parser.add_argument("--sample-sheet", default=None,
                         help="Optional CSV with a 'sample' column + design columns (patient, timepoint, ...) "
                              "joined onto every cell by sample name")
+    parser.add_argument("--min-counts", type=int, default=0,
+                        help="Keep only barcodes with at least this many counts (transcripts/UMIs). "
+                             "Use with DGE_unfiltered to apply one cutoff to every sample instead of "
+                             "split-pipe's per-sample cell calls. Default 0 = no cutoff.")
+    parser.add_argument("--min-genes", type=int, default=0,
+                        help="Keep only barcodes with at least this many detected genes. Default 0.")
     args = parser.parse_args()
 
     samples = []
@@ -154,7 +188,7 @@ def main():
         sample_dir = pathlib.Path(entry[0])
         sample_name = entry[1] if len(entry) > 1 else sample_dir.parent.name
         print(f"Loading {sample_dir} as sample '{sample_name}'...")
-        samples.append(load_one_sample(sample_dir, sample_name))
+        samples.append(load_one_sample(sample_dir, sample_name, args.min_counts, args.min_genes))
 
     if len(samples) == 1:
         combined = samples[0]
@@ -196,6 +230,12 @@ def main():
         for col in lookup.columns:
             combined.obs[col] = pd.Categorical(combined.obs["sample"].astype(str).map(lookup[col]).values)
         print(f"  joined sample sheet columns: {list(lookup.columns)}")
+
+    if args.min_counts or args.min_genes:
+        combined.uns["load_cell_cutoff"] = {"min_counts": args.min_counts, "min_genes": args.min_genes}
+        per_sample = combined.obs["sample"].astype(str).value_counts().sort_index()
+        print("  cells per sample after the cutoff: "
+              + ", ".join(f"{s} {n:,}" for s, n in per_sample.items()))
 
     print(f"Combined: {combined.n_obs} cells x {combined.n_vars} genes "
           f"across {combined.obs['sample'].nunique()} sample(s)")

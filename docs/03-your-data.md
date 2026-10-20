@@ -45,10 +45,17 @@ split-pipe's combine mode. The merged output looks like this:
     count_matrix.mtx            counts: cells x genes
     all_genes.csv               gene_id, gene_name, genome
     cell_metadata.csv           bc_wells, sample, ... one row per cell
+  all-sample/DGE_unfiltered/    every barcode, including empty ones (same three files)
   <sample-1>/DGE_filtered/      the same cells again, split by sample
   <sample-2>/DGE_filtered/
   ...
 ```
+
+`DGE_filtered` holds only the barcodes split-pipe called as cells. Normally
+that is what you load. If split-pipe's cell calls look wrong, use
+`DGE_unfiltered` with one cutoff instead (see
+[Optional: when split-pipe's cell calls are wrong](#optional-when-split-pipes-cell-calls-are-wrong)
+below).
 
 Load **either** `all-sample` **or** the per-sample folders — never both, or
 every cell is counted twice:
@@ -58,6 +65,69 @@ python scripts/00_load_parse_output.py \
   --sample-dir <combined>/all-sample/DGE_filtered all-sample \
   --sample-sheet samples.csv --output 00_raw.h5ad
 ```
+
+---
+
+## Optional: when split-pipe's cell calls are wrong
+
+split-pipe decides which barcodes are cells by fitting a cutoff (transcripts
+per barcode) **separately for every sample in every sublibrary**. That works
+when a sample has one clean "knee" between empty barcodes and cells. When it
+does not, for example when activated or dividing cells form a high-count tail
+above the main population, the cutoff can land far above the main population.
+`DGE_filtered` then keeps only a few hundred very large "cells" for that
+sample and drops the rest without any warning.
+
+**How to spot it.** Sublibraries are random splits of the same cells, so a
+sample should get a similar cutoff, and a similar share of cells, in every
+sublibrary. In a real mouse T-cell dataset (2026), the cutoffs ranged from
+460 to 32,699 transcripts across samples. One sample had 2,956 cells in one
+sublibrary and 261 in the next, even though its unfiltered barcodes were
+almost the same in both. Signs to look for in `agg_sample_summary.csv`
+(one per sublibrary run):
+
+| Column | Warning sign |
+|---|---|
+| `cell_tscp_cutoff` | differs several-fold between sublibraries for the same sample, or one sample's cutoff is far above the others |
+| `number_of_cells` | a sample drops to a few hundred in some sublibraries |
+| `*_median_tscp_per_cell` | jumps to tens of thousands for those same samples |
+
+**Check it with `00a_check_cell_calls.py`** (optional, takes seconds). It reads
+the sublibrary runs, prints each sample's cutoff and cell count per run, counts
+the barcodes that would pass a range of fixed cutoffs, flags unstable samples,
+and draws barcode-rank plots:
+
+```bash
+python scripts/00a_check_cell_calls.py \
+  --run-dir <split-pipe-out>/<sublib-1> <split-pipe-out>/<sublib-2> ... \
+  --output-dir cell_call_check/
+```
+
+It ends with `OK: ... DGE_filtered is fine to use` or `FLAGGED ...`.
+
+**The fix: one cutoff for every sample.** Load `DGE_unfiltered` and give the
+loader the same threshold for all samples:
+
+```bash
+python scripts/00_load_parse_output.py \
+  --sample-dir <combined>/all-sample/DGE_unfiltered all-sample \
+  --min-counts 500 --min-genes 300 \
+  --sample-sheet samples.csv --output 00_raw.h5ad
+```
+
+| Choosing the cutoff | |
+|---|---|
+| look at `barcode_rank.png` | pick a value below the main population of every sample and above the flat tail of empty barcodes |
+| use the `barcodes_ge_*` columns | the numbers per sample should be close to the cells you loaded (target cells ÷ number of sublibraries) |
+| keep it modest | this step only removes empty barcodes; step 01's QC still removes low-quality cells and doublets, per sample |
+
+The loader prints the cells kept per sample and stores the cutoff in the
+`.h5ad` (`uns["load_cell_cutoff"]`) so it is on record. On the cluster, set
+`MIN_COUNTS` and `MIN_GENES` for `run_pipeline.slurm` (page 11).
+
+Then check the high-count cells that split-pipe had kept. Are they a real cell
+state (proliferation genes such as *Mki67*), or doublets? Step 01's doublet
+scores and the cluster markers (step 04) show which.
 
 ---
 

@@ -24,7 +24,7 @@ mkdir -p logs
 
 | Job | Runs | Arguments | Resources |
 |---|---|---|---|
-| `run_pipeline.slurm` | 00 load → 01 QC → 02 PCA → 03 cluster → 04 quick annotation | `DGE_DIR OUT_DIR [sample_name] [mad]` + optional `SAMPLE_SHEET=` | 16 CPU, 400 GB, 24 h — proven on ~1M cells |
+| `run_pipeline.slurm` | 00 load → 01 QC → 02 PCA → 03 cluster → 04 quick annotation | `DGE_DIR OUT_DIR [sample_name] [mad]` + optional `SAMPLE_SHEET=`, and `MIN_COUNTS=`/`MIN_GENES=` when `DGE_DIR` is a `DGE_unfiltered` folder (page 3) | 16 CPU, 400 GB, 24 h — proven on ~1M cells |
 | `run_downstream.slurm` | 02b Harmony → 03 cluster → 04b annotation → 06/07 CellChat | `OUT_DIR [batch_key] [resolution] [skip_harmony 0/1] [species]` | 16 CPU, 400 GB, 24 h — proven on ~1M cells |
 | `run_pseudobulk_de.slurm` | 10 → 11 differential expression | `OUT_DIR CONDITION_COL A B [annotation_col] [sample_col]` + optional `COVARIATES=` | 4 CPU, 64 GB, 4 h |
 | `run_trajectory.slurm` | 08 → 09 trajectories (uses `scrna-traj`) | `OUT_DIR [annotation_col] ROOT_CLUSTER [n_states]` | 8 CPU, 200 GB, 12 h — not yet sized on real data |

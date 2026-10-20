@@ -23,6 +23,12 @@ split-pipe's output (checked against split-pipe v1.9.0 and real Parse output):
   (`count_matrix.mtx`, `all_genes.csv`, `cell_metadata.csv`). Point it at
   either `<combined>/all-sample/DGE_filtered` or the per-sample folders,
   never both (all-sample holds the same cells again).
+- split-pipe's cell calls (which barcodes end up in `DGE_filtered`) use a
+  cutoff fitted per sample and per sublibrary, which can fail on some data.
+  `scripts/00a_check_cell_calls.py` checks this from the sublibrary runs'
+  `agg_sample_summary.csv` and `<sample>/DGE_unfiltered/`. If it flags samples,
+  load `all-sample/DGE_unfiltered` with `--min-counts`/`--min-genes`, one
+  cutoff for every sample (`docs/03-your-data.md`).
 - Study design (patient, time point, tissue, ...) is not in split-pipe's
   output: pass it with `--sample-sheet` (a CSV with a `sample` column whose
   names match the split-pipe sample names exactly).

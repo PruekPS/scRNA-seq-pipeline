@@ -27,6 +27,13 @@ sublibrary. Page 3 explains the inputs. For a single sample without a sheet:
 **Check:** the printed cell and gene counts match what split-pipe reported;
 `joined sample sheet columns: [...]` lists your columns.
 
+**Optional, when split-pipe's cell calls are wrong:** if a sample has only a
+few hundred cells with very high counts, run
+`scripts/00a_check_cell_calls.py` on the sublibrary runs. If it flags
+samples, load `all-sample/DGE_unfiltered` with one cutoff for every sample
+(`--min-counts N --min-genes M`). Page 3 explains how to spot the problem and
+choose the cutoff.
+
 ---
 
 ## 01 — Quality control
