@@ -189,6 +189,14 @@ def main():
     else:
         combined = ad.concat(samples, join="outer", index_unique="-")
 
+    # split-pipe --mode comb suffixes each barcode with its sublibrary
+    # ("01_02_03__s4"); keep that as a column so sublibrary-level batch
+    # effects can be checked after PCA.
+    sublib = combined.obs_names.str.extract(r"__s(\d+)", expand=False)
+    if "sublibrary" not in combined.obs and sublib.notna().all():
+        combined.obs["sublibrary"] = pd.Categorical("s" + sublib.astype(str), ordered=False)
+        print(f"  Found {combined.obs['sublibrary'].nunique()} split-pipe sublibraries in barcodes")
+
     if args.sample_metadata:
         combined.obs = attach_sample_metadata(combined.obs, args.sample_metadata, args.sample_metadata_key)
 
