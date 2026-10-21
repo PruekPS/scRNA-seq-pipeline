@@ -88,4 +88,59 @@ exploratory, and prefer genes that change consistently in every patient.
 
 ---
 
+## Optional: which transcription factors drive the change (step 14)
+
+A DE table lists hundreds of genes. Transcription-factor (TF) activity
+summarises them: if most known targets of a TF move together, that TF is
+probably driving them. Example: a cell state with the targets of CIITA (the
+master regulator of HLA class II) all down is one that has switched off
+antigen presentation, even if no single HLA gene passes the cut-off.
+
+The method is the **univariate linear model (ULM)** from decoupler
+(Badia-i-Mompel et al., *Bioinformatics Advances* 2022). The network is
+**CollecTRI**, a curated, signed TF → target collection (Müller-Dott et al.,
+*Nucleic Acids Research* 2023). For each TF, the gene-level values are
+regressed on its target weights: +1 for an activated target, −1 for a
+repressed one, 0 for all other genes. The **t-value** is the activity score.
+Positive means the TF's targets move the way the TF would push them.
+The script re-implements ULM in numpy because installing decoupler into this
+environment would downgrade numpy.
+
+**Run it.** First download the network once. This step needs internet, so run
+it on a login node, since it is one small download, not compute:
+
+```bash
+python scripts/14a_fetch_collectri.py references/collectri_human.csv
+```
+
+Then score the DE results from step 11, the pseudobulk from step 10, or both.
+This step is cheap, so run it inside a job like the other steps:
+
+```bash
+python scripts/14_tf_activity_ulm.py --net references/collectri_human.csv \
+  --de-dir pseudobulk_de/ --pseudobulk-dir pseudobulk/ --output-dir tf_activity/
+```
+
+| Input | Uses | Gives |
+|---|---|---|
+| `--de-dir` | the DESeq2 `stat` column of every `de_<cell_type>.csv` | one score per TF per cell type: *is this TF more active in condition a than b?* |
+| `--pseudobulk-dir` | log-CPM of every pseudo-sample, centred per gene | one score per TF per pseudo-sample, to plot along a timeline or across patients |
+
+**Outputs:** `tf_activity_de.csv` and `tf_activity_pseudobulk.csv`, one row per TF and contrast or pseudo-sample: `score`, `pvalue`, `n_targets`. The pseudobulk table also carries the metadata columns.
+
+**Reading it, carefully:**
+
+- **The DE input matters most.** Scoring on `stat` already weighs each gene by its DE confidence, so it is the more reliable mode. The pseudobulk scores are relative to the mean of the pseudo-samples you passed in, so compare them within one run only.
+- **Activity is inferred from targets, not measured.** It is not the TF's own mRNA, which is often too low to see. The TF may be inactive even when its targets move, because other TFs share those targets.
+- **TFs with fewer than 5 measured targets are dropped** (`--min-targets`). Gene symbols must match the network: human CollecTRI with human symbols.
+- **AP-1 and NF-κB appear as `AP1` and `NFKB`**, because their complexes are collapsed as decoupler does. In a pseudobulk run they can drop out if their targets are filtered.
+- **The p-values come from a regression across all genes.** They are not a test across patients. With a few patients, look for TFs that change the same way in every patient.
+
+`requests` (needed only by `14a`) is normally already in the `scrna`
+environment through scanpy's dependencies; if not, `pip install requests`.
+The synthetic check `tests/synthetic_tf_activity.py` plants known TF signal
+and confirms the scores recover it (page 4).
+
+---
+
 Next: [10. T-cell receptors (Evercode TCR)](10-tcr.md)

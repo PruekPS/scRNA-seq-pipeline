@@ -41,7 +41,7 @@ plus a plot at every step to check the result is sane.
 | 6 | [Batch correction](docs/06-batch-correction.md) | Harmony, and choosing the right batch column |
 | 7 | [Cell-cell communication](docs/07-cell-communication.md) | CellChat |
 | 8 | [Trajectories and fate mapping](docs/08-trajectory.md) | PAGA, CytoTRACE, CellRank |
-| 9 | [Differential expression](docs/09-differential-expression.md) | pseudobulk DESeq2, matching the design to your experiment |
+| 9 | [Differential expression](docs/09-differential-expression.md) | pseudobulk DESeq2, matching the design to your experiment; optional TF activity |
 | 10 | [T-cell receptors](docs/10-tcr.md) | clonotypes, repertoire diversity, shared and expanded clones |
 | 11 | [Running at scale with SLURM](docs/11-running-on-slurm.md) | the job scripts, chaining, watching jobs, memory |
 | 12 | [When it goes wrong](docs/12-troubleshooting.md) | real errors, what they mean, what to do |
@@ -106,6 +106,7 @@ scripts/          the pipeline (Python; R for CellChat, DESeq2 and Trailmaker co
   06_export_for_cellchat.py, 07_cellchat_analysis.R      cell-cell communication
   08_trajectory_paga.py, 09_cellrank_fate_mapping.py     trajectories, fate probabilities
   10_pseudobulk_prep.py, 11_pseudobulk_deseq2.R          differential expression
+  14a_fetch_collectri.py, 14_tf_activity_ulm.py          optional: transcription-factor activity (page 9)
   12_tcr_attach.py, 13_tcr_analysis.py                   T-cell receptor clonotypes
 pipeline/         SLURM job scripts that chain the steps (page 11)
   split-pipe/     what this pipeline expects from split-pipe's output (no split-pipe code)
