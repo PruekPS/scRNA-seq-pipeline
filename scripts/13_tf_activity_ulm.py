@@ -80,7 +80,7 @@ def main():
     if not (args.de_dir or args.pb_dir):
         raise SystemExit("give --de-dir and/or --pseudobulk-dir")
     out = pathlib.Path(args.output_dir); out.mkdir(parents=True, exist_ok=True)
-    net = pd.read_csv(args.net)
+    net = pd.read_csv(args.net, keep_default_na=False)  # gene/TF names like "NA" or "NULL" are names, not missing
     print(f"network: {net['source'].nunique()} TFs, {len(net):,} edges")
 
     if args.de_dir:
