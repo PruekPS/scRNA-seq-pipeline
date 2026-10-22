@@ -82,7 +82,7 @@ page 1 explains each one, page 11 every argument.
 | Steps | Status |
 |---|---|
 | load, QC, normalize, Harmony, cluster, annotate, CellChat | **validated on real Parse data at full scale**: Parse's public 1M PBMC dataset, 987,585 cells → 907,696 after QC → 694,803 confidently annotated → 291 significant interactions across 19 pathways ([report](docs/reference/real-data-validation.md)) |
-| differential expression (incl. paired designs), T-cell receptors | **tested on synthetic data in split-pipe's exact output format**, with a planted truth: 17/17 checks pass ([page 4](docs/04-test-small-first.md)); not yet on real data |
+| differential expression (incl. paired designs), T-cell receptors | **tested on synthetic data in split-pipe's exact output format**, with a planted truth: 19/19 checks pass ([page 4](docs/04-test-small-first.md)); not yet on real data |
 | trajectories | built and checked against CellRank's documentation; not yet run ([design](docs/reference/trajectory-design.md)) |
 
 Each validated step is also compared against an alternative method — fixed vs.
@@ -104,13 +104,19 @@ scripts/          the pipeline (Python; R for CellChat, DESeq2 and Trailmaker co
   02b_harmony_integration.py   batch correction
   03_cluster.py                Leiden clustering at several resolutions, UMAP
   04b_better_annotation.py     confidence-gated cell-type labels (human, mouse, dog)
+  04c_celltypist_annotation.py optional: reference-based labels (CellTypist, human immune)
+  05_refine_annotation.py, 05b_apply_label_map.py        optional: per-lineage refinement, doublet flags, curated label maps
+  05c_score_gene_programs.py   optional: published gene programs per cell / per sample (T-cell set built in)
   06_export_for_cellchat.py, 07_cellchat_analysis.R      cell-cell communication
   08_trajectory_paga.py, 09_cellrank_fate_mapping.py     trajectories, fate probabilities
   10_pseudobulk_prep.py, 11_pseudobulk_deseq2.R          differential expression
-  14a_fetch_collectri.py, 14_tf_activity_ulm.py          optional: transcription-factor activity (page 9)
+  14a_fetch_collectri.py, 14_tf_activity_ulm.py          optional: transcription-factor activity, human or mouse (page 9)
+  15_gsea_preranked.py         optional: preranked GSEA on the DE results (page 9)
   12_tcr_attach.py, 13_tcr_analysis.py                   T-cell receptor clonotypes
 pipeline/         SLURM job scripts that chain the steps (page 11)
   split-pipe/     what this pipeline expects from split-pipe's output (no split-pipe code)
+  download/       fetch and verify a sequencing core's data release (page 11)
+configs/          example label maps for 05b
 envs/             conda environments and their installers (page 2)
 tests/            synthetic test data and the end-to-end test (page 4)
 docs/             the twelve pages above; docs/reference/ for design and validation

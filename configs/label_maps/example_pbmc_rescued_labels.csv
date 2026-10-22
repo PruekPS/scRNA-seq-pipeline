@@ -1,0 +1,14 @@
+celltypist_label,final_label,broad_lineage
+Regulatory T cells,Treg,T cells
+MAIT cells,MAIT,T cells
+gamma-delta T cells,gd T (TRDC+ ZBTB16+),T cells
+Cycling T cells,Proliferating T (MKI67+),T cells
+ILC3,ILC,NK cells
+Plasma cells,Plasmablasts,Plasmablasts
+Plasmablasts,Plasmablasts,Plasmablasts
+DC1,cDC1,Dendritic cells
+DC2,cDC2,Dendritic cells
+pDC,pDC,Dendritic cells
+Mast cells,Basophils/mast,Basophils/mast
+Megakaryocytes/platelets,Platelets,Other
+HSC/MPP,HSPC,Other

@@ -89,3 +89,18 @@ dependencies:
   # `Rscript -e 'remotes::install_version("NMF", version="0.28", repos="https://cloud.r-project.org")'`
   # -- which compiles cleanly on HiPerGator's toolchain (unlike svglite,
   # which needed the conda-precompiled version above).
+  - pip
+  - pip:
+      # For scripts/04c_celltypist_annotation.py (reference-based immune
+      # annotation). PyPI wheel; installed on HiPerGator 2026-10-20 with
+      # `python -m pip install celltypist==1.6.3`, which added only
+      # openpyxl/et-xmlfile and left scanpy/pandas/numpy/sklearn untouched.
+      # Models are downloaded separately (see the 04c docstring).
+      - celltypist==1.6.3
+      # For scripts/15_gsea_preranked.py (preranked GSEA on DESeq2 stats).
+      # Installed on HiPerGator 2026-10-20 with
+      # `python -m pip install --no-deps gseapy==1.1.3` -- its runtime deps
+      # (numpy/scipy/pandas/matplotlib/requests) were already present, so
+      # --no-deps guaranteed nothing else changed. Gene sets (e.g. MSigDB
+      # Hallmark via gseapy.get_library) are fetched once and kept as a GMT.
+      - gseapy==1.1.3

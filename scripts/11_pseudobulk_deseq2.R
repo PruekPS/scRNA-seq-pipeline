@@ -41,6 +41,12 @@
 # Usage (local):
 #   Rscript 11_pseudobulk_deseq2.R --input-dir=pseudobulk/ --output-dir=de_results/ \
 #     --condition-a=disease --condition-b=healthy [--covariates=patient]
+#   paired shortcut (after scripts/10 --pair-col): ... --pair-col=pair
+#
+# --pair-col=pair fits ~ pair + [covariates +] condition like --covariates=pair, and in
+# addition drops pseudo-samples with no pair and keeps, per cell type, only pairs seen in
+# both conditions (a pair seen once is absorbed by its own term and adds nothing to the
+# within-pair estimate); --min-replicates then counts complete pairs.
 #
 # Usage (HPC): see pipeline/run_pseudobulk_de.slurm.
 
@@ -68,7 +74,7 @@ args <- parse_args(commandArgs(trailingOnly = TRUE))
 if (is.null(args$input.dir) || is.null(args$output.dir) || is.null(args$condition.a) || is.null(args$condition.b)) {
   stop("Usage: Rscript 11_pseudobulk_deseq2.R --input-dir=DIR --output-dir=DIR ",
        "--condition-a=LEVEL --condition-b=LEVEL [--padj-threshold=0.05] [--lfc-threshold=1.0] ",
-       "[--top-n-heatmap=30] [--min-replicates=2] [--covariates=col1,col2]")
+       "[--top-n-heatmap=30] [--min-replicates=2] [--covariates=col1,col2] [--pair-col=pair]")
 }
 input_dir <- args$input.dir
 output_dir <- args$output.dir
@@ -80,6 +86,8 @@ top_n_heatmap <- as.integer(args$top.n.heatmap)
 min_replicates <- as.integer(args$min.replicates)
 covariates <- trimws(strsplit(args$covariates, ",", fixed = TRUE)[[1]])
 covariates <- covariates[nzchar(covariates)]
+pair_col <- args$pair.col  # NULL = no pairing
+if (!is.null(pair_col)) covariates <- unique(c(pair_col, covariates))
 design_formula <- as.formula(paste("~", paste(c(covariates, "condition"), collapse = " + ")))
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
@@ -95,6 +103,15 @@ colnames(counts) <- meta$pseudo_sample_id
 mode(counts) <- "integer"
 
 meta <- meta[meta$condition %in% c(condition_a, condition_b), ]
+if (!is.null(pair_col)) {
+  if (!pair_col %in% names(meta)) {
+    stop("--pair-col '", pair_col, "' not in pseudobulk_metadata.csv -- re-run scripts/10 with --pair-col")
+  }
+  unpaired <- is.na(meta[[pair_col]]) | meta[[pair_col]] == ""
+  if (any(unpaired)) cat(sprintf("Paired mode: dropping %d pseudo-samples with no '%s'\n", sum(unpaired), pair_col))
+  meta <- meta[!unpaired, ]
+  meta[[pair_col]] <- as.character(meta[[pair_col]])
+}
 counts <- counts[, meta$pseudo_sample_id, drop = FALSE]
 meta$condition <- factor(meta$condition, levels = c(condition_b, condition_a))  # condition_b = reference
 missing_cov <- setdiff(covariates, names(meta))
@@ -115,6 +132,17 @@ n_skip_design <- 0
 
 for (ct in sort(unique(meta$cell_type))) {
   ct_meta <- meta[meta$cell_type == ct, ]
+  if (!is.null(pair_col)) {
+    pr <- as.character(ct_meta[[pair_col]])
+    complete <- intersect(pr[ct_meta$condition == condition_a], pr[ct_meta$condition == condition_b])
+    dropped <- setdiff(unique(pr), complete)
+    if (length(dropped) > 0) cat(sprintf("  '%s': dropping incomplete pair(s) %s\n", ct, paste(dropped, collapse = ", ")))
+    ct_meta <- ct_meta[pr %in% complete, ]
+    if (length(complete) < min_replicates) {
+      cat(sprintf("SKIP '%s': only %d complete pair(s) (need >= %d)\n", ct, length(complete), min_replicates))
+      next
+    }
+  }
   n_a <- sum(ct_meta$condition == condition_a)
   n_b <- sum(ct_meta$condition == condition_b)
   if (n_a < min_replicates || n_b < min_replicates) {
@@ -197,14 +225,14 @@ top_overall <- head(unique(combined_df$gene[!is.na(combined_df$padj)]), top_n_he
 heatmap_mat <- matrix(NA_real_, nrow = length(top_overall), ncol = ncol(counts),
                        dimnames = list(top_overall, colnames(counts)))
 for (ct in names(vst_by_celltype)) {
-  ct_cols <- meta$pseudo_sample_id[meta$cell_type == ct]
   ct_vst <- vst_by_celltype[[ct]]
+  ct_cols <- colnames(ct_vst)  # paired mode may have dropped incomplete pairs
   shared_genes <- intersect(top_overall, rownames(ct_vst))
   heatmap_mat[shared_genes, ct_cols] <- ct_vst[shared_genes, ct_cols, drop = FALSE]
 }
 # Only pseudo-samples of cell types that were actually fitted: skipped cell types have no
 # VST values, and their all-NA columns used to crash the column clustering (hclust on NA).
-fitted_cols <- meta$pseudo_sample_id[meta$cell_type %in% names(vst_by_celltype)]
+fitted_cols <- unlist(lapply(vst_by_celltype, colnames), use.names = FALSE)
 heatmap_mat <- heatmap_mat[, colnames(heatmap_mat) %in% fitted_cols, drop = FALSE]
 heatmap_mat <- heatmap_mat[rowSums(!is.na(heatmap_mat)) > 0, , drop = FALSE]
 heatmap_mat_scaled <- t(scale(t(heatmap_mat)))  # z-score per gene across pseudo-samples

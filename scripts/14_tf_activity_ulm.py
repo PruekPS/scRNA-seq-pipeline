@@ -8,7 +8,7 @@ x (+1 activation / -1 repression for targets, 0 for every other gene), with an
 intercept, across all genes. The TF activity score is the t-value of the
 slope -- positive = its targets move in the direction the TF would push them.
 Re-implemented here (vectorised numpy) because installing decoupler 1.x into
-this environment would downgrade numpy 2.x -> 1.26 via its numba pin.
+this environment would downgrade numpy (2.4 -> 2.2) via its numba pin.
 
 Network CSV: columns source, target, weight (one row per TF-target edge).
 Fetch CollecTRI once (Muller-Dott et al., Nucleic Acids Res 2023) with

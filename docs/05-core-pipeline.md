@@ -141,7 +141,103 @@ wrong answer.
   endothelium), extend the marker dictionary in the script first — otherwise
   those cells can only come out `Ambiguous` or mislabelled.
 - Mouse and dog marker sets are not yet validated against real non-human
-  data.
+  data. On a real mouse lung dataset (2026) the blood-focused sets labelled
+  lung cells as "Platelet" and "HSPC"; label tissue samples by reviewing
+  `top_markers.csv` yourself, or extend the dictionary.
+
+---
+
+## 04c — Reference-based labels with CellTypist (optional, human immune cells)
+
+```bash
+python scripts/04c_celltypist_annotation.py --input 04b_annotated.h5ad --output 04c_celltypist.h5ad \
+  --model /path/to/models/Immune_All_Low.pkl --over-clustering leiden_r0.6 --plot-dir celltypist_plots
+```
+
+04b scores clusters against a hand-picked marker list. That breaks down when a
+whole population shifts away from textbook markers (a strong interferon or
+vaccine response, disease-skewed monocytes): on a real PBMC run most 04b labels
+came out `Ambiguous`. CellTypist (Domínguez Conde et al., *Science* 2022)
+instead applies models trained on large curated immune atlases to every gene of
+every cell.
+
+| Output column | Meaning |
+|---|---|
+| `celltypist_label` | per-cell prediction |
+| `celltypist_majority` | majority vote within each cluster of `--over-clustering`, the label to use by default |
+| `celltypist_conf` | confidence of the per-cell label |
+
+The models are **human immune** atlases. Download them once, outside the job
+(the script itself makes no network calls):
+`CELLTYPIST_FOLDER=/path/to/models python -c "import celltypist; celltypist.models.download_models(model=['Immune_All_Low.pkl','Immune_All_High.pkl'])"`.
+Run a second model (e.g. `Immune_All_High`) with `--prefix celltypist_high`
+for broad labels.
+
+---
+
+## 05 / 05b — Refine labels per lineage, flag doublets, apply a curated label map (optional)
+
+```bash
+python scripts/05_refine_annotation.py --input 04c_celltypist.h5ad --outdir refined/ \
+  --broad-col celltypist_high_majority --fine-col celltypist_label --batch-key sample
+python scripts/05b_apply_label_map.py --input refined/refined.h5ad --output final_labels.h5ad \
+  --subcluster-map my_subcluster_labels.csv --rescued-map my_rescued_labels.csv
+```
+
+A majority vote over ~25 whole-dataset clusters merges real subtypes, gives
+rare cells (plasma cells, progenitors) their neighbours' label, and labels
+doublet pockets as one of their parents. **05** re-clusters each lineage (T/NK,
+B/plasma, myeloid, other) on its own variable genes, labels each subcluster by
+its majority CellTypist call, flags subclusters that score high for *another*
+lineage's markers *and* have high doublet scores as `Doublet (A+B)`, and keeps
+confident rare-type calls. It writes `subcluster_summary.csv` (size, majority
+label, agreement, doublet and cross-lineage scores, top markers) for review.
+
+**05b** then applies **your** decisions: a CSV mapping every subcluster to a
+final label and broad lineage, so curated labels live in a reviewable file,
+not in code. It refuses a map that does not cover every subcluster.
+`configs/label_maps/example_pbmc_*.csv` are the maps from a real PBMC run, as
+examples of the format and level of evidence. Write your own for your data.
+
+---
+
+## 05c — Score published gene programs (optional)
+
+```bash
+python scripts/05c_score_gene_programs.py --input 04b_annotated.h5ad --output 05c_programs.h5ad \
+  --species mouse --summary-csv programs_per_sample.csv --group-col condition
+# Treg programs, Treg cells only:
+python scripts/05c_score_gene_programs.py --input t_cells.h5ad --output t_programs.h5ad --species mouse \
+  --subset-col cell_type --subset-values Treg --summary-csv treg_programs_per_sample.csv
+```
+
+A label says what a cell *is*; a program score says how strongly it runs a
+function. Each program is scored per cell (mean of its genes minus an
+expression-matched random control set, `scanpy.tl.score_genes`), stored as
+`prog_<program>`, and averaged per sample.
+
+Built-in T-cell programs (`--programs builtin`, mouse or human symbols):
+naive, effector/memory, Th1, Th2, Th17, Tfh, Tr1 (IL-10), cytotoxic,
+tissue-resident, IFN response, exhaustion, progenitor-exhausted, two
+activation sets, Treg resting / effector / tissue-tumour / Tfr, proliferation,
+and a dissociation-stress set for QC. Or give your own CSV (`program,gene`).
+
+| Use with care | Why |
+|---|---|
+| compare per sample (mouse/patient), not per cell | cells of one sample are not independent |
+| check `Dissociation stress (QC)` first | heat-shock and immediate-early genes rise with tissue handling and inflate activation scores |
+| a baseline "AIM" score is not an AIM assay | AIM needs antigen restimulation; `AIM-like activation` includes immediate-early genes (Cd69, Nr4a1, Egr2), so use `AIM core (no IEG)` |
+| scores are relative | compare the same program across samples, not different programs with each other |
+
+The gene choices follow T-cell reference atlases and reviews, for example
+ProjecTILs (Andreatta et al., *Nat Commun* 2021,
+[doi:10.1038/s41467-021-23324-4](https://doi.org/10.1038/s41467-021-23324-4)),
+the pan-cancer T-cell landscape (Zheng et al., *Science* 2021,
+[doi:10.1126/science.abe6474](https://doi.org/10.1126/science.abe6474)),
+tissue Treg adaptation (Miragaia et al., *Immunity* 2019,
+[doi:10.1016/j.immuni.2019.01.001](https://doi.org/10.1016/j.immuni.2019.01.001))
+and Tr1 cells (Gagliani et al., *Nat Med* 2013,
+[doi:10.1038/nm.3179](https://doi.org/10.1038/nm.3179)).
 
 ---
 

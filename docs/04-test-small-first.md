@@ -66,7 +66,7 @@ PASS  12 mis-ordered sublibraries refused: no output written
 PASS  13 three expanded P1 clones found once each and shared pre/6h
 PASS  11 significant genes are all planted 6h genes: false hits: []
 ...
-17/17 checks passed
+19/19 checks passed
 ```
 
 It takes about two minutes. Run it after installing, and again after changing

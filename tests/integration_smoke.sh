@@ -29,6 +29,13 @@ step "00 load all-sample/DGE_unfiltered with one cutoff (optional path)"
 python scripts/00_load_parse_output.py --sample-dir "${F}/wt_comb/all-sample/DGE_unfiltered" all-sample \
   --min-counts 200 --min-genes 100 --sample-sheet "${F}/sample_sheet.csv" --output "${R}/00_raw_unfiltered.h5ad"
 
+step "00 load with a sample sheet keyed on another column, dropping one sublibrary (options)"
+python -c "import pandas as pd, sys; d = pd.read_csv(sys.argv[1]); d.rename(columns={'sample': 'sample_id'}).to_csv(sys.argv[2], index=False)" \
+  "${F}/sample_sheet.csv" "${R}/sample_sheet_keyed.csv"
+python scripts/00_load_parse_output.py --sample-dir "${F}/wt_comb/all-sample/DGE_filtered" all-sample \
+  --sample-sheet "${R}/sample_sheet_keyed.csv" --sample-sheet-key sample_id --exclude-sublibraries s3 \
+  --output "${R}/00_raw_options.h5ad"
+
 step "01 QC (per-sample Scrublet)"
 python scripts/01_qc_filter.py --input "${R}/00_raw.h5ad" --output "${R}/01_filtered.h5ad" --plot-dir "${R}/qc_plots"
 
@@ -75,6 +82,12 @@ python scripts/10_pseudobulk_prep.py --input "${R}/04b_annotated.h5ad" --output-
   --condition-col timepoint --covariate-cols patient
 Rscript scripts/11_pseudobulk_deseq2.R --input-dir="${R}/pseudobulk" --output-dir="${R}/de" \
   --condition-a=6h --condition-b=pre --covariates=patient
+
+step "10/11 paired shortcut (--pair-col) must match the --covariates=patient run"
+python scripts/10_pseudobulk_prep.py --input "${R}/04b_annotated.h5ad" --output-dir "${R}/pseudobulk_paired" \
+  --condition-col timepoint --pair-col patient
+Rscript scripts/11_pseudobulk_deseq2.R --input-dir="${R}/pseudobulk_paired" --output-dir="${R}/de_paired" \
+  --condition-a=6h --condition-b=pre --pair-col=pair
 
 step "check against planted truth"
 python tests/check_integration.py "${OUT}"

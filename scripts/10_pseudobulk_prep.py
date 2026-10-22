@@ -21,6 +21,12 @@ design (--covariates there). A covariate must be constant within each
 sample -- per-cell quantities (e.g. a sublibrary tag that mixes cells of
 one sample) can't be a pseudobulk covariate and are rejected.
 
+--pair-col is a shortcut for the paired case (the same donor sampled under
+both conditions, e.g. pre/post draws): the column is written as 'pair', and
+scripts/11 run with --pair-col=pair fits ~ pair + condition using only pairs
+seen in both conditions. Samples with an empty pair value are left unpaired
+(excluded from paired tests).
+
 Each pseudo-sample = one (sample, cell_type, condition) combination,
 summed from raw counts (not log-normalized data -- DESeq2 models raw
 counts directly, that's the whole point of using it over a per-cell test).
@@ -40,6 +46,9 @@ onward all preserve adata.layers["counts"]) and a cell-type annotation column
 Usage:
     python 10_pseudobulk_prep.py --input 04b_annotated.h5ad --output-dir pseudobulk/ \
         --condition-col disease_status --sample-col sample --annotation-col cell_type_v2
+    # paired pre/post within each patient:
+    python 10_pseudobulk_prep.py --input 04b_annotated.h5ad --output-dir pseudobulk/ \
+        --condition-col timepoint --pair-col patient
 """
 import argparse
 import pathlib
@@ -52,7 +61,7 @@ import scipy.sparse as sp
 
 
 def aggregate_pseudobulk(adata, sample_col, annotation_col, condition_col, counts_layer, min_cells,
-                         covariate_cols=()):
+                         covariate_cols=(), pair_col=None):
     counts = adata.layers[counts_layer]
     if not sp.issparse(counts):
         counts = sp.csr_matrix(counts)
@@ -62,6 +71,7 @@ def aggregate_pseudobulk(adata, sample_col, annotation_col, condition_col, count
 
     sample_covs = (adata.obs.groupby(sample_col, observed=True)[list(covariate_cols)].first()
                    if covariate_cols else None)
+    pair_of = adata.obs.groupby(sample_col, observed=True)[pair_col].first() if pair_col else None
 
     pseudo_counts = []
     meta_rows = []
@@ -79,6 +89,8 @@ def aggregate_pseudobulk(adata, sample_col, annotation_col, condition_col, count
             "condition": condition_val,
             "n_cells_aggregated": n_cells,
             **({c: sample_covs.loc[sample_val, c] for c in covariate_cols} if covariate_cols else {}),
+            **({"pair": (pair_of.loc[sample_val] if pd.notna(pair_of.loc[sample_val])
+                         and str(pair_of.loc[sample_val]) != "" else None)} if pair_col else {}),
         })
 
     if not meta_rows:
@@ -115,6 +127,9 @@ def main():
                          help="Comma-separated SAMPLE-LEVEL adata.obs columns to carry into the metadata for "
                               "use as DESeq2 covariates in script 11 (e.g. 'patient' for a paired design, "
                               "'batch'). Default: none.")
+    parser.add_argument("--pair-col", default=None, dest="pair_col",
+                         help="SAMPLE-LEVEL adata.obs column naming the pairing unit of a paired design (e.g. "
+                              "'patient'); written as 'pair' for script 11's --pair-col=pair. Empty = unpaired.")
     args = parser.parse_args()
     covariate_cols = [c.strip() for c in args.covariate_cols.split(",") if c.strip()]
 
@@ -123,7 +138,7 @@ def main():
     for col in (args.sample_col, args.annotation_col, args.condition_col):
         if col not in adata.obs:
             raise SystemExit(f"'{col}' not in adata.obs (available: {list(adata.obs.columns)})")
-    for col in covariate_cols:
+    for col in covariate_cols + ([args.pair_col] if args.pair_col else []):
         if col not in adata.obs:
             raise SystemExit(f"--covariate-cols '{col}' not in adata.obs (available: {list(adata.obs.columns)})")
         if col in (args.sample_col, args.annotation_col, args.condition_col):
@@ -146,12 +161,15 @@ def main():
           f"min {args.min_cells} cells/group...")
     pseudo_matrix, meta_df = aggregate_pseudobulk(
         adata, args.sample_col, args.annotation_col, args.condition_col, args.counts_layer, args.min_cells,
-        covariate_cols,
+        covariate_cols, args.pair_col,
     )
 
     print(f"Kept {len(meta_df)} pseudo-samples (dropped groups with < {args.min_cells} cells)")
     print("Pseudo-samples per (cell_type, condition):")
     print(meta_df.groupby(["cell_type", "condition"], observed=True).size().to_string())
+    if args.pair_col:
+        print(f"Pairs (from '{args.pair_col}'): {meta_df['pair'].nunique()} distinct; "
+              f"{int(meta_df['pair'].isna().sum())} pseudo-samples have no pair (excluded from paired tests)")
 
     out_dir = pathlib.Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

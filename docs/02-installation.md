@@ -63,6 +63,14 @@ error; it only failed when a script tried to import scanpy. Two pins in
 **An install that exits cleanly is not proof it worked** — always run the
 verify step below.
 
+Two optional steps need pip packages, listed at the end of `environment.yml`:
+CellTypist for 04c and gseapy for 15. They were added to an existing
+environment without changing anything else
+(`python -m pip install celltypist==1.6.3`;
+`python -m pip install --no-deps gseapy==1.1.3`). Step 14 (TF activity) needs
+nothing extra: it re-implements decoupler's method in numpy, because installing
+decoupler would downgrade this environment's numpy.
+
 ## CellChat's extra pieces
 
 CellChat (page 7) needs packages conda cannot provide: Bioconductor packages,

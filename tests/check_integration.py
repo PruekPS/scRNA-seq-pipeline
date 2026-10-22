@@ -95,5 +95,17 @@ check("11 significant genes are all planted 6h genes", not false, f"false hits: 
 check("11 planted genes recovered", len(found) >= 8, f"{len(found)}/10 planted genes significant in >=1 cell type")
 check("11 design recorded", (de["design"] == "~patient + condition").all(), de["design"].iloc[0])
 
+dp = pd.read_csv(R / "de_paired" / "de_all_celltypes_combined.csv")
+sig_p = dp[(dp["padj"] < 0.05) & (dp["log2FoldChange"].abs() > 1)]
+same = set(zip(sig_p["cell_type"], sig_p["gene"])) == set(zip(sig["cell_type"], sig["gene"]))
+check("11 --pair-col shortcut gives the same hits as --covariates=patient",
+      same and (dp["design"] == "~pair + condition").all(), f"{len(sig_p)} vs {len(sig)} significant rows")
+
+# 00 options: sample sheet keyed on another column; whole sublibrary dropped
+o = ad.read_h5ad(R / "00_raw_options.h5ad").obs
+check("00 --sample-sheet-key + --exclude-sublibraries",
+      {"patient", "timepoint"} <= set(o.columns) and "s3" not in set(o["sublibrary"].astype(str))
+      and o["patient"].notna().all(), f"sublibraries {sorted(o['sublibrary'].astype(str).unique())}")
+
 print(f"\n{sum(results)}/{len(results)} checks passed")
 sys.exit(0 if all(results) else 1)

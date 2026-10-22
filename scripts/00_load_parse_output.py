@@ -30,7 +30,11 @@ every sample), usable as Harmony's --batch-key.
 columns (patient, timepoint, tissue, condition, ...) come from a small CSV
 with a `sample` column plus any others; they are joined onto every cell.
 Sample names must match the split-pipe sample names exactly; samples with
-cells but no sheet row stop the run.
+cells but no sheet row stop the run. The name column is `sample` unless
+--sample-sheet-key says otherwise (e.g. `sample_id`).
+
+--exclude-sublibraries s1 ...: drop whole split-pipe sublibraries (by their
+__sN tag) when one carries a library-level artifact.
 
 --min-counts / --min-genes (optional): one cell cutoff for every sample.
 split-pipe calls cells with a separate knee cutoff per sample and per
@@ -173,8 +177,16 @@ def main():
     )
     parser.add_argument("--output", required=True, help="Path to write the combined raw .h5ad")
     parser.add_argument("--sample-sheet", default=None,
-                        help="Optional CSV with a 'sample' column + design columns (patient, timepoint, ...) "
+                        help="Optional CSV with a sample-name column + design columns (patient, timepoint, ...) "
                              "joined onto every cell by sample name")
+    parser.add_argument("--sample-sheet-key", default="sample",
+                        help="Column of --sample-sheet holding the split-pipe sample name (default 'sample')")
+    parser.add_argument("--sample-metadata", default=None, help=argparse.SUPPRESS)  # older alias of --sample-sheet
+    parser.add_argument("--sample-metadata-key", default="sample_id", help=argparse.SUPPRESS)  # alias, old default
+    parser.add_argument("--exclude-sublibraries", nargs="+", default=None, metavar="sN",
+                        help="Drop cells from these split-pipe sublibraries (e.g. s1), numbered by the __sN "
+                             "suffix of --mode comb barcodes -- for a sublibrary with a library-level artifact. "
+                             "Order follows the sublibrary list given to split-pipe comb.")
     parser.add_argument("--min-counts", type=int, default=0,
                         help="Keep only barcodes with at least this many counts (transcripts/UMIs). "
                              "Use with DGE_unfiltered to apply one cutoff to every sample instead of "
@@ -209,24 +221,43 @@ def main():
         combined.obs["sublibrary"] = pd.Categorical(sub.values)
         print(f"  sublibrary tag found in cell names: {combined.obs['sublibrary'].nunique()} sublibraries")
 
-    if args.sample_sheet:
-        sheet = pd.read_csv(args.sample_sheet, dtype=str)
-        if "sample" not in sheet.columns:
-            sys.exit(f"--sample-sheet needs a 'sample' column; has {list(sheet.columns)}")
-        if sheet["sample"].duplicated().any():
-            sys.exit(f"--sample-sheet lists a sample twice: {sorted(sheet.loc[sheet['sample'].duplicated(), 'sample'])}")
+    if args.exclude_sublibraries:
+        if "sublibrary" not in combined.obs:
+            sys.exit("--exclude-sublibraries given, but cell names carry no __sN sublibrary tag "
+                     "(expects split-pipe --mode comb output)")
+        unknown = sorted(set(args.exclude_sublibraries) - set(combined.obs["sublibrary"].astype(str)))
+        if unknown:
+            sys.exit(f"--exclude-sublibraries {unknown} not present; have "
+                     f"{sorted(combined.obs['sublibrary'].astype(str).unique())}")
+        drop = combined.obs["sublibrary"].astype(str).isin(args.exclude_sublibraries).values
+        print(f"  excluding sublibraries {args.exclude_sublibraries}: {int(drop.sum()):,} cells removed")
+        combined = combined[~drop].copy()
+        combined.obs["sublibrary"] = combined.obs["sublibrary"].cat.remove_unused_categories()
+
+    sheet_path, key = args.sample_sheet, args.sample_sheet_key
+    if args.sample_metadata:
+        if sheet_path:
+            sys.exit("Give --sample-sheet or its older alias --sample-metadata, not both")
+        sheet_path, key = args.sample_metadata, args.sample_metadata_key
+    if sheet_path:
+        sheet = pd.read_csv(sheet_path, dtype=str)
+        if key not in sheet.columns:
+            sys.exit(f"--sample-sheet needs a '{key}' column (set another with --sample-sheet-key); "
+                     f"has {list(sheet.columns)}")
+        if sheet[key].duplicated().any():
+            sys.exit(f"--sample-sheet lists a sample twice: {sorted(sheet.loc[sheet[key].duplicated(), key])}")
         have = set(combined.obs["sample"].astype(str))
-        missing = sorted(have - set(sheet["sample"]))
+        missing = sorted(have - set(sheet[key]))
         if missing:
             sys.exit(f"Samples with cells but no --sample-sheet row: {missing}. Names must match split-pipe's "
-                     f"sample names exactly (sheet has {sorted(sheet['sample'])}).")
-        unused = sorted(set(sheet["sample"]) - have)
+                     f"sample names exactly (sheet has {sorted(sheet[key])}).")
+        unused = sorted(set(sheet[key]) - have)
         if unused:
             print(f"  note: sheet rows with no cells (ignored): {unused}")
-        clash = [c for c in sheet.columns if c != "sample" and c in combined.obs.columns]
+        clash = [c for c in sheet.columns if c != key and c in combined.obs.columns]
         if clash:
             sys.exit(f"--sample-sheet columns already exist in the cell metadata: {clash}; rename them")
-        lookup = sheet.set_index("sample")
+        lookup = sheet.set_index(key)
         for col in lookup.columns:
             combined.obs[col] = pd.Categorical(combined.obs["sample"].astype(str).map(lookup[col]).values)
         print(f"  joined sample sheet columns: {list(lookup.columns)}")

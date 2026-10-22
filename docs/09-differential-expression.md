@@ -42,6 +42,7 @@ time; nothing is hard-coded.
 |---|---|---|
 | unpaired groups (different people in each group) | *(no covariates)* | `~ condition` |
 | paired: the same patients before and after | `--covariate-cols patient` and `--covariates=patient` | `~ patient + condition` |
+| paired, with some unpaired samples in the run | `--pair-col patient` (step 10) and `--pair-col=pair` (step 11) | `~ pair + condition`, using only pairs seen in both conditions |
 | a known processing batch spread across both groups | `--covariate-cols batch` and `--covariates=batch` | `~ batch + condition` |
 
 **Why pairing matters.** People differ a lot from each other. Comparing each
@@ -62,6 +63,12 @@ Two rules the scripts enforce:
 
 A cell type is also skipped if either condition has fewer than 2 samples
 (`--min-replicates`): DESeq2 cannot estimate variability from one.
+
+**`--pair-col` vs `--covariates`.** Both fit the same model. `--pair-col` adds
+two safeguards: samples with an empty pair value are dropped, and for each cell
+type only pairs present in *both* conditions are kept (a patient seen once is
+absorbed by its own term and adds nothing). `--min-replicates` then counts
+complete pairs. On the synthetic test both give identical results.
 
 ---
 
@@ -132,14 +139,48 @@ python scripts/14_tf_activity_ulm.py --net references/collectri_human.csv \
 
 - **The DE input matters most.** Scoring on `stat` already weighs each gene by its DE confidence, so it is the more reliable mode. The pseudobulk scores are relative to the mean of the pseudo-samples you passed in, so compare them within one run only.
 - **Activity is inferred from targets, not measured.** It is not the TF's own mRNA, which is often too low to see. The TF may be inactive even when its targets move, because other TFs share those targets.
-- **TFs with fewer than 5 measured targets are dropped** (`--min-targets`). Gene symbols must match the network: human CollecTRI with human symbols.
+- **TFs with fewer than 5 measured targets are dropped** (`--min-targets`). Gene symbols must match the network: human CollecTRI for human data, the mouse version (below) for mouse data.
 - **AP-1 and NF-κB appear as `AP1` and `NFKB`**, because their complexes are collapsed as decoupler does. In a pseudobulk run they can drop out if their targets are filtered.
 - **The p-values come from a regression across all genes.** They are not a test across patients. With a few patients, look for TFs that change the same way in every patient.
+
+**Mouse data.** CollecTRI is curated in human. Fetch a mouse version, converted
+with MGI's curated human–mouse homology table (one-to-one orthologs only):
+
+```bash
+python scripts/14a_fetch_collectri.py references/collectri_mouse.csv --organism mouse
+```
+
+Human TF footprints transferred to mouse this way recover mouse perturbations
+(Holland, Szalai & Saez-Rodriguez, *BBA Gene Regulatory Mechanisms* 2020,
+[doi:10.1016/j.bbagrm.2019.194431](https://doi.org/10.1016/j.bbagrm.2019.194431)),
+and these footprint tools work on single-cell data (Holland et al., *Genome
+Biology* 2020, [doi:10.1186/s13059-020-1949-z](https://doi.org/10.1186/s13059-020-1949-z)).
+Do **not** just change the letter case (FOXP3 → Foxp3). On a real mouse dataset
+that put ~6% of one-to-one genes on the wrong or a non-orthologous symbol and
+added ~8,000 edges through one-to-many gene families. TF scores barely moved
+(per-cell r = 0.999), but pathway-footprint scores did (PROGENy TNFa r = 0.40).
 
 `requests` (needed only by `14a`) is normally already in the `scrna`
 environment through scanpy's dependencies; if not, `pip install requests`.
 The synthetic check `tests/synthetic_tf_activity.py` plants known TF signal
 and confirms the scores recover it (page 4).
+
+---
+
+## Optional: pathway-level summary — preranked GSEA (step 15)
+
+```bash
+python scripts/15_gsea_preranked.py --de-dir pseudobulk_de/ --gmt references/hallmark.gmt \
+  --output-dir gsea/
+```
+
+Ranks every tested gene by DESeq2's `stat` (signed, confidence-weighted, so no
+arbitrary cut-off) and runs preranked GSEA (Subramanian et al., *PNAS* 2005)
+per cell type with gseapy. Gene sets come from a local GMT file (download once,
+e.g. MSigDB Hallmark with `gseapy.get_library("MSigDB_Hallmark_2020", organism="Human")`
+— use mouse gene sets for mouse data). Outputs `gsea_<cell_type>.csv` and
+`gsea_all_celltypes.csv` (term, NES, p, FDR, leading-edge genes). Same caution
+as above: with 2 samples per group, read it as direction, not proof.
 
 ---
 

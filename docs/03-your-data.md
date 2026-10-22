@@ -151,6 +151,11 @@ P2_6h,P2,6h,blood
 | no column names that already exist in `cell_metadata.csv` | the loader refuses rather than overwrite |
 | avoid spaces in sample names | `P1_pre`, not `P1 pre` — spaces cause trouble in command lines and file names |
 
+If your sheet names the sample column something else (e.g. `sample_id`), add
+`--sample-sheet-key sample_id` instead of renaming it. If one whole sublibrary
+turns out to carry a library-level artifact, drop it at load time with
+`--exclude-sublibraries s1` (its `__sN` tag).
+
 These columns are what later stages compare: `patient` for paired designs
 (page 9) and grouping clones (page 10), `timepoint`/`tissue` as the condition
 to test.
