@@ -42,3 +42,5 @@ NOTES.local.md
 # Local lab-project folders kept beside the code (sample loading tables, slide figures,
 # notes) -- unpublished study material, never committed
 /Alex_TCR_WT_K7M2/
+# Parse manuals and index tables (their copyright)
+/Manual/

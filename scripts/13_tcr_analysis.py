@@ -27,8 +27,6 @@ By default only cells with a full alpha+beta pair enter the clonotype analyses
 (`--include-orphans` to keep single-chain cells); cells with one chain cannot be
 assigned to a clone reliably.
 
-NOT YET RUN ON REAL DATA -- smoke-tested on tests/synthetic_tcr.py only.
-
 Usage:
   python 13_tcr_analysis.py --input 12_tcr.h5ad --output-dir tcr_results \\
       --sample-col sample --group-col patient --annotation-col cell_type_v2
@@ -40,13 +38,12 @@ import pathlib
 import warnings
 
 import anndata as ad
-import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scirpy as ir
+
+import figstyle
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -149,22 +146,27 @@ def top_clones(adata: ad.AnnData, tcr: pd.DataFrame, sample_col: str, ann_col: s
     return pd.DataFrame(rows), (pd.DataFrame(comp).T.fillna(0) if comp else pd.DataFrame())
 
 
-def heatmap(df: pd.DataFrame, title: str, path: pathlib.Path, fmt: str = "{:.2f}", cmap: str = "viridis"):
+def heatmap(df: pd.DataFrame, label: str, path: pathlib.Path, fmt: str = "{:.2f}", cmap: str = figstyle.SEQUENTIAL):
     if df.empty:
         return
-    fig, ax = plt.subplots(figsize=(1.0 + 0.55 * df.shape[1], 1.0 + 0.45 * df.shape[0]))
-    im = ax.imshow(df.to_numpy(dtype=float), cmap=cmap, aspect="auto")
-    ax.set_xticks(range(df.shape[1]), df.columns.astype(str), rotation=60, ha="right")
+    fig, axes = figstyle.subplots(1, 1, w_mm=min(183, 25 + 6.5 * df.shape[1]), h_mm=min(240, 20 + 5 * df.shape[0]))
+    ax = axes[0, 0]
+    values = df.to_numpy(dtype=float)
+    im = ax.imshow(values, cmap=cmap, aspect="auto")
+    ax.set_xticks(range(df.shape[1]), df.columns.astype(str), rotation=90)
     ax.set_yticks(range(df.shape[0]), df.index.astype(str))
+    ax.tick_params(length=0)
+    for s in ax.spines.values():
+        s.set_visible(False)
     if df.size <= 400:
-        for (i, j), v in np.ndenumerate(df.to_numpy(dtype=float)):
+        middle = np.nanmin(values) + 0.5 * (np.nanmax(values) - np.nanmin(values))
+        for (i, j), v in np.ndenumerate(values):
             if not np.isnan(v):
-                ax.text(j, i, fmt.format(v), ha="center", va="center", fontsize=7, color="white")
-    fig.colorbar(im, ax=ax, shrink=0.7)
-    ax.set_title(title)
-    fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+                ax.text(j, i, fmt.format(v), ha="center", va="center", fontsize=5,
+                        color="white" if v < middle else figstyle.INK)
+    colorbar = fig.colorbar(im, ax=ax, shrink=0.6, label=label)
+    colorbar.outline.set_linewidth(0.4)
+    figstyle.save_figure(fig, path, legend=f"{label}.", source_data=df, check=False)
 
 
 def main():
@@ -188,6 +190,7 @@ def main():
 
     out = pathlib.Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    figstyle.apply_style()
     rng = np.random.default_rng(args.seed)
 
     adata = ad.read_h5ad(args.input)
@@ -203,6 +206,9 @@ def main():
     if not args.include_orphans:
         keep &= obs["chain_pairing"].isin(PAIRED)
     tcr = obs.loc[keep].copy()
+    if tcr.empty:
+        raise SystemExit("No cell has a usable TCR for clonotype analysis. Check step 12's match rate and "
+                         "chain-pairing report; --include-orphans also keeps single-chain cells.")
     tcr["clone_id"] = tcr["clone_id"].astype(str)
     print(f"Cells used for clonotype analyses: {len(tcr):,} of {adata.n_obs:,} "
           f"({'paired alpha+beta only' if not args.include_orphans else 'including single-chain cells'})")
@@ -221,25 +227,28 @@ def main():
     div.to_csv(out / "repertoire_by_sample.csv", index=False)
     print(f"  diversity: {len(div)} samples (rarefied to {rarefy_to} cells, {args.n_rarefy} draws)")
 
-    fig, ax = plt.subplots(figsize=(1.2 + 0.5 * len(div), 4))
+    fig, axes = figstyle.subplots(1, 1, w_mm=min(183, 25 + 6 * len(div)), h_mm=50)
+    ax = axes[0, 0]
     col = "rarefied_clonality_mean" if div["rarefied_clonality_mean"].notna().any() else None
     y = div[col] if col else 1 - div["normalized_shannon"]
     err = div["rarefied_normalized_shannon_sd"] if col else None
-    ax.bar(div[args.sample_col].astype(str), y, yerr=err, color="#1f6f6b", capsize=3)
-    ax.set_ylabel("clonality (1 - normalized Shannon)" + (f", rarefied to {rarefy_to} cells" if col else ", NOT rarefied"))
-    ax.tick_params(axis="x", rotation=60)
-    ax.set_title("Repertoire clonality by sample")
-    fig.tight_layout()
-    fig.savefig(out / "clonality_by_sample.png", dpi=150)
-    plt.close(fig)
+    ax.bar(div[args.sample_col].astype(str), y, yerr=err, color=figstyle.PALETTE[0], capsize=1, linewidth=0,
+           error_kw={"elinewidth": 0.5, "capthick": 0.5})
+    ax.set_ylabel("Clonality")
+    ax.tick_params(axis="x", rotation=90)
+    figstyle.save_figure(fig, out / "clonality_by_sample",
+                         legend="Clonality = 1 - normalized Shannon entropy of clone sizes, "
+                                + (f"mean of {args.n_rarefy} draws of {rarefy_to} cells per sample; bars, s.d."
+                                   if col else "NOT rarefied (no sample had enough TCR cells)."),
+                         source_data=div.set_index(args.sample_col))
 
     # 2. sharing
     long, n_shared, jacc = sharing_tables(tcr, args.sample_col, args.group_col, ann_col)
     long.to_csv(out / "shared_clones.csv", index=False)
     n_shared.to_csv(out / "sample_overlap_counts.csv")
     jacc.to_csv(out / "sample_overlap_jaccard.csv")
-    heatmap(n_shared, "Clonotypes shared between samples (count)", out / "sample_overlap_counts.png", fmt="{:.0f}")
-    heatmap(jacc, "Clonotype overlap between samples (Jaccard)", out / "sample_overlap_jaccard.png")
+    heatmap(n_shared, "Clonotypes shared between samples", out / "sample_overlap_counts", fmt="{:.0f}")
+    heatmap(jacc, "Clonotype overlap between samples (Jaccard index)", out / "sample_overlap_jaccard")
     n_public = int(long["public"].sum()) if "public" in long.columns and len(long) else 0
     print(f"  sharing: {len(long):,} clonotypes in >= 2 samples"
           + (f"; {n_public} seen in >= 2 '{args.group_col}' levels (public)" if args.group_col else ""))
@@ -253,41 +262,44 @@ def main():
         pooled, per_sample = expansion_by_celltype(tcr, args.sample_col, ann_col)
         pooled.to_csv(out / "expanded_by_celltype_pooled.csv")
         per_sample.to_csv(out / "expanded_by_celltype_by_sample.csv", index=False)
-        fig, ax = plt.subplots(figsize=(7, 0.4 * len(pooled) + 1.5))
+        fig, axes = figstyle.subplots(1, 1, w_mm=figstyle.SINGLE, h_mm=4 * len(pooled) + 15)
+        ax = axes[0, 0]
         order = list(pooled.index.astype(str))
-        ax.barh(order, pooled["fraction_expanded"], color="#c8d9d6", label="pooled")
+        ax.barh(order, pooled["fraction_expanded"], color="#B3B3B3", label="Pooled", linewidth=0)
         for i, ct in enumerate(order):
             vals = per_sample.loc[per_sample[ann_col].astype(str) == ct, "fraction_expanded"]
-            ax.scatter(vals, np.full(len(vals), i) + rng.uniform(-0.15, 0.15, len(vals)), s=12, color="#1f6f6b",
-                       label="per sample" if i == 0 else None, zorder=3)
+            ax.scatter(vals, np.full(len(vals), i) + rng.uniform(-0.15, 0.15, len(vals)), s=4, color=figstyle.PALETTE[0], linewidths=0,
+                       label="Per sample" if i == 0 else None, zorder=3)
         ax.invert_yaxis()
-        ax.set_xlabel(f"fraction of TCR cells in expanded clones (>= {args.expanded_min_size} cells in-sample)")
-        ax.legend(loc="lower right", fontsize=8)
-        ax.set_title("Which cell states hold the expanded clones")
-        fig.tight_layout()
-        fig.savefig(out / "expanded_by_celltype.png", dpi=150)
-        plt.close(fig)
+        ax.set_xlabel("TCR cells in expanded clones (fraction)")
+        ax.legend(loc="best")
+        figstyle.save_figure(fig, out / "expanded_by_celltype",
+                             legend=f"Expanded clone: at least {args.expanded_min_size} cells within the same sample. "
+                                    "Bars, all samples pooled; dots, individual samples.", source_data=pooled)
         summary["fraction_expanded_by_celltype_pooled"] = pooled["fraction_expanded"].round(4).to_dict()
 
     top, comp = top_clones(adata, tcr, args.sample_col, ann_col, args.top_n_clones)
     top.to_csv(out / "top_clones.csv", index=False)
     if not comp.empty:
-        heatmap(comp, f"Cell-type make-up of the {len(comp)} largest clonotypes", out / "top_clones_phenotype.png")
+        heatmap(comp, f"Fraction of each of the {len(comp)} largest clonotypes per cell type",
+                out / "top_clones_phenotype")
 
     if args.embedding in adata.obsm:
         emb = adata.obsm[args.embedding]
         cat = pd.Series("no paired TCR", index=adata.obs_names)
         cat.loc[tcr.index] = np.where(tcr["expanded"], "expanded", "singleton")
-        fig, ax = plt.subplots(figsize=(6, 5.5))
-        for label, color, size in (("no paired TCR", "#d9d9d9", 3), ("singleton", "#7fb3ad", 5), ("expanded", "#b2182b", 9)):
+        fig, axes = figstyle.subplots(1, 1, w_mm=figstyle.SINGLE, h_mm=70)
+        ax = axes[0, 0]
+        base = figstyle.point_size(adata.n_obs)
+        for label, color, size in (("no paired TCR", "#E6E6E6", base), ("singleton", figstyle.PALETTE[5], base * 1.5),
+                                   ("expanded", figstyle.PALETTE[3], base * 2.5)):
             m = (cat == label).to_numpy()
-            ax.scatter(emb[m, 0], emb[m, 1], s=size, c=color, label=f"{label} ({m.sum():,})", linewidths=0)
-        ax.set_xticks([]); ax.set_yticks([])
-        ax.legend(markerscale=2, fontsize=8, loc="best")
-        ax.set_title("Expanded clonotypes on the embedding")
-        fig.tight_layout()
-        fig.savefig(out / "embedding_expansion.png", dpi=150)
-        plt.close(fig)
+            ax.scatter(emb[m, 0], emb[m, 1], s=size, c=color, label=f"{label[0].upper() + label[1:]} ({m.sum():,})", linewidths=0,
+                       rasterized=True)
+        figstyle.clean_embedding(ax, arrows=True, x=emb[:, 0], y=emb[:, 1])
+        ax.legend(markerscale=3, loc="upper left", bbox_to_anchor=(1.0, 1.0), handletextpad=0.2)
+        figstyle.save_figure(fig, out / "embedding_expansion", check=False,
+                             legend="UMAP coloured by clone status; numbers are cells in each category.")
 
     adata.obs["clone_size_in_sample"] = tcr["clone_size_in_sample"].reindex(adata.obs_names)
     adata.obs["clone_expanded"] = tcr["expanded"].reindex(adata.obs_names).astype("object").astype(str)

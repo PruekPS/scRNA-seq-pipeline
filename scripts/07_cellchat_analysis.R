@@ -26,8 +26,8 @@
 # significance testing) -- budget hours, not minutes.
 #
 # Usage (local):
-#   Rscript 07_cellchat_analysis.R --input-dir cellchat_input/ \
-#     --output-dir cellchat_results/ --species human
+#   Rscript 07_cellchat_analysis.R --input-dir=cellchat_input/ \
+#     --output-dir=cellchat_results/ --species=human
 #
 # Usage (HPC): see pipeline/run_downstream.slurm.
 
@@ -35,6 +35,8 @@ suppressMessages({
   library(CellChat)
   library(Matrix)
 })
+script_path <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
+source(file.path(dirname(script_path), "figstyle.R"))
 
 parse_args <- function(args) {
   out <- list(species = "human", min.cells = 10, workers = 1)
@@ -63,8 +65,9 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 
 cat("=== Loading exported data from", input_dir, "===\n")
 mat <- Matrix::readMM(file.path(input_dir, "normalized_matrix.mtx"))
-genes <- read.csv(file.path(input_dir, "genes.csv"))$gene
-meta <- read.csv(file.path(input_dir, "cell_metadata.csv"), row.names = 1)
+# na.strings: a gene really named "NA" is a name, not a missing value
+genes <- read.csv(file.path(input_dir, "genes.csv"), na.strings = character(0))$gene
+meta <- read.csv(file.path(input_dir, "cell_metadata.csv"), row.names = 1, check.names = FALSE)
 
 mat <- as(mat, "CsparseMatrix")
 rownames(mat) <- genes
@@ -80,6 +83,9 @@ cat(sprintf("Loaded %d genes x %d cells across %d cell types\n",
 cat("=== Creating CellChat object ===\n")
 cellchat <- createCellChat(object = mat, meta = meta, group.by = "cell_type")
 
+if (!species %in% c("human", "mouse")) {
+  cat(sprintf("Note: CellChat has no '%s' database; using the human one, matched by gene symbol.\n", species))
+}
 db <- if (species == "mouse") CellChatDB.mouse else CellChatDB.human
 cellchat@DB <- db
 
@@ -93,6 +99,11 @@ cat("=== Identifying overexpressed genes/interactions ===\n")
 cellchat <- identifyOverExpressedGenes(cellchat)
 cellchat <- identifyOverExpressedInteractions(cellchat)
 
+n_pairs <- nrow(cellchat@LR$LRsig)
+if (is.null(n_pairs) || n_pairs < 2) {
+  stop("Only ", ifelse(is.null(n_pairs), 0, n_pairs), " ligand-receptor pair(s) are expressed, too few for CellChat ",
+       "to test. Check that --species matches the data and that gene names are symbols (e.g. CD3E, not Ensembl IDs).")
+}
 cat("=== Computing communication probabilities (slowest step) ===\n")
 cellchat <- computeCommunProb(cellchat)
 cellchat <- filterCommunication(cellchat, min.cells = min_cells)
@@ -106,17 +117,25 @@ write.csv(df.net, file.path(output_dir, "significant_interactions.csv"), row.nam
 cat(sprintf("%d significant ligand-receptor interactions across %d pathways\n",
             nrow(df.net), length(unique(df.net$pathway_name))))
 
-pdf(file.path(output_dir, "network_plots.pdf"), width = 8, height = 8)
 groupSize <- as.numeric(table(cellchat@idents))
-netVisual_circle(cellchat@net$count, vertex.weight = groupSize, weight.scale = TRUE,
-                  label.edge = FALSE, title.name = "Number of interactions")
-netVisual_circle(cellchat@net$weight, vertex.weight = groupSize, weight.scale = TRUE,
-                  label.edge = FALSE, title.name = "Interaction strength")
+draw_network <- function(mat) {
+  function() {
+    par(mar = c(0.5, 0.5, 0.5, 0.5))
+    netVisual_circle(mat, vertex.weight = groupSize, weight.scale = TRUE, label.edge = FALSE,
+                     vertex.label.cex = 0.8)
+  }
+}
+save_base_nature(draw_network(cellchat@net$count), file.path(output_dir, "network_interaction_count"),
+                 width_mm = NATURE_SINGLE_MM, height_mm = NATURE_SINGLE_MM)
+save_base_nature(draw_network(cellchat@net$weight), file.path(output_dir, "network_interaction_strength"),
+                 width_mm = NATURE_SINGLE_MM, height_mm = NATURE_SINGLE_MM)
 tryCatch({
-  netVisual_bubble(cellchat, remove.isolate = FALSE)
-}, error = function(e) cat("netVisual_bubble skipped:", conditionMessage(e), "\n"))
-dev.off()
+  bubble <- netVisual_bubble(cellchat, remove.isolate = FALSE) + ggplot2::labs(x = NULL, y = NULL) + theme_nature() +
+    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, vjust = 0.5))
+  save_nature(bubble, file.path(output_dir, "bubble_ligand_receptor"), width_mm = NATURE_DOUBLE_MM,
+              height_mm = max(70, min(240, 50 + 3.5 * length(unique(df.net$interaction_name)))))
+}, error = function(e) cat("bubble plot skipped:", conditionMessage(e), "\n"))
 
 saveRDS(cellchat, file.path(output_dir, "cellchat_object.rds"))
-cat("Wrote", output_dir, "/{significant_interactions.csv, network_plots.pdf, cellchat_object.rds}\n")
+cat("Wrote", output_dir, "/{significant_interactions.csv, network_*, bubble_ligand_receptor.*, cellchat_object.rds}\n")
 cat("=== Done ===\n")

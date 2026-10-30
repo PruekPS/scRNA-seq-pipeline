@@ -32,11 +32,10 @@ Usage (HPC): see pipeline/run_downstream.slurm, which chains this step into
 import argparse
 import pathlib
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import scanpy as sc
 import scanpy.external as sce
+
+import figstyle
 
 
 def save_integration_plots(adata, batch_key, plot_dir):
@@ -45,14 +44,15 @@ def save_integration_plots(adata, batch_key, plot_dir):
 
     # Cheap before/after check on PC1 vs PC2 -- a full neighbors/UMAP re-run
     # belongs in 03_cluster.py (which this step feeds), not duplicated here.
-    fig, axes = plt.subplots(1, 2, figsize=(11, 5))
-    sc.pl.embedding(adata, basis="pca", color=batch_key, ax=axes[0], show=False,
-                     title="Before Harmony (X_pca)", legend_loc=None)
-    sc.pl.embedding(adata, basis="pca_harmony", color=batch_key, ax=axes[1], show=False,
-                     title="After Harmony (X_pca_harmony)", legend_loc="right margin")
-    fig.tight_layout()
-    fig.savefig(plot_dir / "pca_before_after_harmony.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    fig, axes = figstyle.subplots(1, 2, w_mm=figstyle.ONE_AND_HALF, h_mm=50)
+    size = figstyle.point_size(adata.n_obs)
+    sc.pl.embedding(adata, basis="pca", color=batch_key, ax=axes[0, 0], show=False, size=size,
+                    title="Before Harmony", legend_loc=None)
+    sc.pl.embedding(adata, basis="pca_harmony", color=batch_key, ax=axes[0, 1], show=False, size=size,
+                    title="After Harmony", legend_loc="right margin", legend_fontsize=5)
+    figstyle.rasterize_points(fig)
+    figstyle.save_figure(fig, plot_dir / "pca_before_after_harmony",
+                         legend=f"First two components before and after Harmony, coloured by {batch_key}.")
 
 
 def main():
@@ -102,6 +102,7 @@ def main():
         theta=args.theta, max_iter_harmony=args.max_iter_harmony,
     )
 
+    figstyle.apply_style()
     save_integration_plots(adata, args.batch_key, args.plot_dir)
 
     print(f"Wrote obsm['X_pca_harmony'] ({adata.obsm['X_pca_harmony'].shape[1]} dims).")

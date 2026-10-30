@@ -26,6 +26,7 @@ Usage:
         --rescued-map configs/label_maps/x_rescued_labels.csv
 """
 import argparse
+import pathlib
 
 import pandas as pd
 import scanpy as sc
@@ -75,9 +76,10 @@ def main():
     adata.obs["broad_lineage"] = pd.Categorical(broad)
     print("\nFinal labels:\n" + adata.obs["final_label"].value_counts().to_string())
     print("\nBroad lineage:\n" + adata.obs["broad_lineage"].value_counts().to_string())
+    pathlib.Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     adata.write_h5ad(args.output)
     pd.crosstab(adata.obs["final_label"], adata.obs[args.sample_col]).to_csv(
-        args.output.replace(".h5ad", "_counts_by_sample.csv"))
+        str(pathlib.Path(args.output).with_suffix("")) + "_counts_by_sample.csv")
     print(f"\nWrote {args.output}")
 
 

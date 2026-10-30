@@ -64,7 +64,7 @@ check("12 combined: TCR cells sit in T-lineage clusters", s12["paired_tcr_cells_
 s12b = json.load(open(R / "tcr_plots_persub" / "tcr_attach_summary.json"))
 check("12 per-sublibrary route gives the same cells", s12b["n_matched_to_wt"] == s12["n_matched_to_wt"],
       f"{s12b['n_matched_to_wt']:,} vs {s12['n_matched_to_wt']:,}")
-check("12 all-sample folder not double-loaded", s12["n_tcr_cells"] == planted["n_tcr_cells"],
+check("12 all-sample and TCR_unfiltered folders not loaded", s12["n_tcr_cells"] == planted["n_tcr_cells"],
       f"{s12['n_tcr_cells']:,} TCR cells read (planted {planted['n_tcr_cells']:,})")
 check("12 mis-ordered sublibraries refused", not (R / "12_should_not_exist.h5ad").exists(), "no output written")
 
@@ -106,6 +106,40 @@ o = ad.read_h5ad(R / "00_raw_options.h5ad").obs
 check("00 --sample-sheet-key + --exclude-sublibraries",
       {"patient", "timepoint"} <= set(o.columns) and "s3" not in set(o["sublibrary"].astype(str))
       and o["patient"].notna().all(), f"sublibraries {sorted(o['sublibrary'].astype(str).unique())}")
+
+# 00c: a real set of sublibraries passes; a planted copy is flagged, with the molecule share recovered
+check("00c passes distinct sublibraries", not (R / "overlap_ok" / "flagged_pairs.csv").exists(), "nothing flagged")
+dup = pd.read_csv(R / "overlap_dup" / "flagged_pairs.csv")
+ok_dup = len(dup) == 1 and {dup.iloc[0]["library_a"], dup.iloc[0]["library_b"]} == {"s1", "s1dup"}
+ok_dup = ok_dup and dup.iloc[0]["same_sample_pct"] == 100 and dup.iloc[0]["tscp_spearman"] > 0.99
+check("00c flags the planted duplicate library", ok_dup, dup.to_dict("records"))
+check("00c --molecules recovers the planted 70% shared molecules", abs(dup.iloc[0]["pct_molecules_shared"] - 70) < 5,
+      f"{dup.iloc[0]['pct_molecules_shared']}%")
+
+# figures: the Nature-style package is complete
+names = ["pdf", "svg", "png", "tiff"]
+atlas = R / "fig_atlas"
+check("16 atlas figure package", all((atlas / f"Fig_atlas.{e}").stat().st_size > 1000 for e in names)
+      and (atlas / "Fig_atlas_legend.txt").exists() and (atlas / "source_data" / "cells.csv.gz").exists(),
+      "pdf, svg, png, tiff, legend, source data")
+comp = pd.read_csv(atlas / "source_data" / "composition_percent.csv", index_col=0)
+check("16 --pool-samples counts pooled samples once", "P2 pooled" in comp.index and "P2_pre" not in comp.index,
+      f"{list(comp.index)}")
+fig17 = pd.read_csv(R / "fig_group" / "composition_source_data.csv")
+check("17 group figure keeps one row per sample", len(fig17) == 4, f"{len(fig17)} samples")
+for name, path in [("01 QC", R / "qc_plots" / "qc_violin"), ("03 UMAP", R / "cluster_plots" / "umap_by_resolution"),
+                   ("04b dotplot", R / "marker_plots" / "marker_dotplot_fine"), ("13 clonality", R / "13_tcr" / "clonality_by_sample"),
+                   ("11 volcano", next((R / "de" / "volcano_plots").glob("volcano_*.pdf")).with_suffix(""))]:
+    check(f"{name} figure in pdf and png", all(path.with_name(f"{path.name}.{e}").exists() for e in ("pdf", "png")), str(path.name))
+
+# 05d: stress and ambient flags
+flagged = pd.read_csv(R / "ambient" / "de_flagged.csv", keep_default_na=False)
+check("05d adds both flags to the DE table", {"stress_gene", "possible_ambient"} <= set(flagged.columns), f"{len(flagged):,} rows")
+sys.path.insert(0, "scripts")
+stress = __import__("05d_flag_ambient_stress")
+check("05d stress pattern covers human and mouse, not unrelated genes",
+      stress.is_stress_gene("HSPA1A") and stress.is_stress_gene("Hspa1a") and stress.is_stress_gene("Fos")
+      and not stress.is_stress_gene("CD3E") and not stress.is_stress_gene("MT-ND1"), "checked")
 
 print(f"\n{sum(results)}/{len(results)} checks passed")
 sys.exit(0 if all(results) else 1)

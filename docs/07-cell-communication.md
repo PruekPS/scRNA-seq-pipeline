@@ -1,5 +1,10 @@
 # 7. Cell-cell communication (CellChat)
 
+> **Before you start**
+> - In the code folder, with `$OUT` set and `conda activate scrna`, in a job or interactive session (pages 1, 4).
+> - CellChat is installed ([page 2](02-installation.md), step 5).
+> - `$OUT/04b_annotated.h5ad` exists ([page 5](05-core-pipeline.md)).
+
 CellChat looks for pairs of cell types where one expresses a **ligand** and the
 other its **receptor**, at levels unlikely to arise by chance, and reports a
 communication probability for each. It is an inference from expression, not a
@@ -12,10 +17,10 @@ measurement of signalling: treat strong hits as hypotheses to check.
 Two steps — export from Python, analyse in R:
 
 ```bash
-python scripts/06_export_for_cellchat.py --input 04b_annotated.h5ad \
-  --output-dir cellchat_input/ --group-col cell_type_v2 --exclude-ambiguous
-Rscript scripts/07_cellchat_analysis.R --input-dir=cellchat_input/ \
-  --output-dir=cellchat_results/ --species=human --workers=1
+python scripts/06_export_for_cellchat.py --input $OUT/04b_annotated.h5ad \
+  --output-dir $OUT/cellchat_input/ --group-col cell_type_v2 --exclude-ambiguous
+Rscript scripts/07_cellchat_analysis.R --input-dir=$OUT/cellchat_input/ \
+  --output-dir=$OUT/cellchat_results/ --species=human --workers=1
 ```
 
 | Option | Why |
@@ -34,9 +39,10 @@ install on the cluster.
 
 | Output | Shows |
 |---|---|
-| network plots | number and strength of significant interactions between each pair of cell types |
-| pathway bar chart | which signalling pathways carry the most interactions |
-| bubble plot | every significant ligand-receptor pair, by source → target |
+| `network_interaction_count.*`, `network_interaction_strength.*` | number and strength of significant interactions between each pair of cell types |
+| `bubble_ligand_receptor.*` | every significant ligand-receptor pair, by source → target |
+| `significant_interactions.csv` | the same results as a table; sort by `pathway_name` to see which pathways carry the most |
+| `cellchat_object.rds` | the fitted object, for more plots in R |
 
 On the real 694,803-cell PBMC run: 291 significant interactions across 19
 pathways, about 1.5 hours, almost all of it in the permutation test. Full

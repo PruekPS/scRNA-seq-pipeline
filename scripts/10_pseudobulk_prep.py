@@ -34,10 +34,8 @@ Pseudo-samples aggregated from too few cells are dropped
 (--min-cells-per-group) since a "pseudobulk" of a handful of cells isn't
 meaningfully different from single-cell noise.
 
-NOT YET TEST-RUN as of this commit -- dataset-agnostic by design, so
-there's nothing to validate against until a real condition comparison
-exists. Validate against tests/data/ (add a synthetic condition column
-if needed) or a small real subset before trusting output.
+Tested end to end on synthetic data with planted changes
+(tests/integration_smoke.sh) and used on real Parse datasets.
 
 Input: an annotated .h5ad with raw counts in a layer (scripts/02_normalize_pca.py
 onward all preserve adata.layers["counts"]) and a cell-type annotation column
@@ -140,12 +138,14 @@ def main():
             raise SystemExit(f"'{col}' not in adata.obs (available: {list(adata.obs.columns)})")
     for col in covariate_cols + ([args.pair_col] if args.pair_col else []):
         if col not in adata.obs:
-            raise SystemExit(f"--covariate-cols '{col}' not in adata.obs (available: {list(adata.obs.columns)})")
+            raise SystemExit(f"Column '{col}' (--covariate-cols/--pair-col) not in adata.obs "
+                             f"(available: {list(adata.obs.columns)})")
         if col in (args.sample_col, args.annotation_col, args.condition_col):
-            raise SystemExit(f"--covariate-cols '{col}' is already the sample/annotation/condition column")
+            raise SystemExit(f"Column '{col}' (--covariate-cols/--pair-col) is already the "
+                             "sample/annotation/condition column")
         varies = adata.obs.groupby(args.sample_col, observed=True)[col].nunique()
         if (varies > 1).any():
-            raise SystemExit(f"--covariate-cols '{col}' is not constant within samples "
+            raise SystemExit(f"Column '{col}' (--covariate-cols/--pair-col) is not constant within samples "
                               f"(e.g. {list(varies[varies > 1].index[:3])}) -- a pseudobulk covariate must "
                               "describe the whole sample, not individual cells.")
     if args.counts_layer not in adata.layers:

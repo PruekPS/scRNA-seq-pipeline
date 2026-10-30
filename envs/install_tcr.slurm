@@ -1,7 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=scrna-env-tcr
-#SBATCH --account=<GROUP>   # set at submission: sbatch --account=... --qos=...
-#SBATCH --qos=<GROUP>
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4

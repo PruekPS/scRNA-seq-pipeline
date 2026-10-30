@@ -32,11 +32,10 @@
 # with the condition (e.g. every patient appears in only one condition) that
 # cell type is skipped with an explanation instead of DESeq2 erroring out.
 #
-# Smoke-tested 2026-10-19 on HiPerGator with tests/synthetic_tcr.py's planted
-# DE (G0-G9 up 4x at "6h", G10-G39 up 3x in one patient): unpaired found 38
-# significant hits, ~patient + condition found 62, all of them planted
-# condition genes (0 patient genes, 0 others); a covariate confounded with the
-# condition was refused per cell type. NOT yet run on real data.
+# Tested with tests/synthetic_tcr.py's planted DE (G0-G9 up 4x at "6h", G10-G39 up
+# 3x in one patient): unpaired found 38 significant hits, ~patient + condition
+# found 62, all of them planted condition genes; a covariate confounded with the
+# condition was refused per cell type. Also used on real Parse datasets.
 #
 # Usage (local):
 #   Rscript 11_pseudobulk_deseq2.R --input-dir=pseudobulk/ --output-dir=de_results/ \
@@ -56,6 +55,8 @@ suppressMessages({
   library(ggplot2)
   library(ComplexHeatmap)
 })
+script_path <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)[1])
+source(file.path(dirname(script_path), "figstyle.R"))
 
 parse_args <- function(args) {
   out <- list(padj.threshold = 0.05, lfc.threshold = 1.0, top.n.heatmap = 30, min.replicates = 2, covariates = "")
@@ -95,8 +96,9 @@ dir.create(file.path(output_dir, "volcano_plots"), recursive = TRUE, showWarning
 
 cat("=== Loading pseudobulk data from", input_dir, "===\n")
 counts <- as.matrix(Matrix::readMM(file.path(input_dir, "pseudobulk_counts.mtx")))
-genes <- read.csv(file.path(input_dir, "genes.csv"))$gene
-meta <- read.csv(file.path(input_dir, "pseudobulk_metadata.csv"))
+# na.strings: a gene or sample really named "NA" is a name, not a missing value
+genes <- read.csv(file.path(input_dir, "genes.csv"), na.strings = character(0))$gene
+meta <- read.csv(file.path(input_dir, "pseudobulk_metadata.csv"), na.strings = character(0))
 
 rownames(counts) <- genes
 colnames(counts) <- meta$pseudo_sample_id
@@ -190,16 +192,17 @@ for (ct in sort(unique(meta$cell_type))) {
   cat(sprintf("  %d significant genes (padj<%.3g, |log2FC|>%.2g) -> %s\n",
               n_sig, padj_threshold, lfc_threshold, out_csv))
 
-  p <- ggplot(res_df, aes(x = log2FoldChange, y = -log10(pmax(padj, 1e-300)), color = significant)) +
-    geom_point(alpha = 0.6, size = 1.2) +
-    scale_color_manual(values = c("FALSE" = "grey70", "TRUE" = "#1f6f6b")) +
-    geom_vline(xintercept = c(-lfc_threshold, lfc_threshold), linetype = "dashed", color = "grey40") +
-    geom_hline(yintercept = -log10(padj_threshold), linetype = "dashed", color = "grey40") +
-    labs(title = paste0(ct, ": ", condition_a, " vs ", condition_b),
-         x = "log2 fold change", y = "-log10(adjusted p-value)") +
-    theme_minimal() + theme(legend.position = "none")
-  ggsave(file.path(output_dir, "volcano_plots", paste0("volcano_", gsub("[^A-Za-z0-9]", "_", ct), ".png")),
-         p, width = 6, height = 5, dpi = 150)
+  volcano_df <- res_df[!is.na(res_df$padj), ]
+  p <- ggplot(volcano_df, aes(x = log2FoldChange, y = -log10(pmax(padj, 1e-300)), color = significant)) +
+    geom_point(alpha = 0.7, size = 0.6, stroke = 0) +
+    scale_color_manual(values = c("FALSE" = "#B3B3B3", "TRUE" = "#D55E00")) +
+    geom_vline(xintercept = c(-lfc_threshold, lfc_threshold), linetype = "dashed", color = "#4D4D4D", linewidth = 0.176) +
+    geom_hline(yintercept = -log10(padj_threshold), linetype = "dashed", color = "#4D4D4D", linewidth = 0.176) +
+    labs(x = bquote(log[2]~"fold change ("*.(condition_a)*" vs "*.(condition_b)*")"),
+         y = bquote(-log[10]~"adjusted"~italic(P))) +
+    theme_nature() + theme(legend.position = "none")
+  save_nature(p, file.path(output_dir, "volcano_plots", paste0("volcano_", gsub("[^A-Za-z0-9]", "_", ct))),
+              width_mm = 70, height_mm = 60)
 
   vsd <- tryCatch(vst(dds, blind = FALSE), error = function(e) varianceStabilizingTransformation(dds, blind = FALSE))
   vst_by_celltype[[ct]] <- assay(vsd)
@@ -240,29 +243,35 @@ heatmap_mat_scaled[is.nan(heatmap_mat_scaled)] <- 0  # a gene constant across sa
 
 col_ct <- meta$cell_type[match(colnames(heatmap_mat_scaled), meta$pseudo_sample_id)]
 col_cond <- meta$condition[match(colnames(heatmap_mat_scaled), meta$pseudo_sample_id)]
-col_anno <- HeatmapAnnotation(condition = col_cond, cell_type = col_ct)
+legend_font <- list(title_gp = grid::gpar(fontsize = 5.5), labels_gp = grid::gpar(fontsize = 5.5))
+col_anno <- HeatmapAnnotation(condition = col_cond, cell_type = col_ct,
+                              annotation_name_gp = grid::gpar(fontsize = 5.5),
+                              annotation_legend_param = list(condition = legend_font, cell_type = legend_font))
 
 # Genes filtered out in some cell types leave NA gaps; hierarchical clustering can't use
 # them, so in that case keep columns grouped by cell type (split) and ordered by condition.
 has_na <- anyNA(heatmap_mat_scaled)
 if (has_na) cat("  heatmap: some genes untested in some cell types (grey); columns grouped, not clustered\n")
-png(file.path(output_dir, "top_de_genes_heatmap.png"), width = 2400, height = max(1200, 40 * nrow(heatmap_mat_scaled)), res = 200)
-draw(Heatmap(heatmap_mat_scaled, name = "z-score (VST)",
-             top_annotation = col_anno,
-             column_split = col_ct,
-             column_order = order(col_ct, col_cond),
-             cluster_columns = !has_na,
-             cluster_rows = !has_na,
-             show_column_names = FALSE,
-             row_names_gp = grid::gpar(fontsize = 8),
-             column_title_gp = grid::gpar(fontsize = 8),
-             na_col = "grey90"))
-dev.off()
+heatmap_font <- grid::gpar(fontsize = 5.5)
+save_base_nature(function() {
+  draw(Heatmap(heatmap_mat_scaled, name = "z-score (VST)",
+               top_annotation = col_anno,
+               column_split = col_ct,
+               column_order = order(col_ct, col_cond),
+               cluster_columns = !has_na,
+               cluster_rows = !has_na,
+               show_column_names = FALSE,
+               row_names_gp = grid::gpar(fontsize = 5, fontface = "italic"),
+               column_title_gp = heatmap_font,
+               heatmap_legend_param = list(title_gp = heatmap_font, labels_gp = heatmap_font),
+               na_col = "grey90"))
+}, file.path(output_dir, "top_de_genes_heatmap"), width_mm = NATURE_DOUBLE_MM,
+   height_mm = max(70, min(240, 3 * nrow(heatmap_mat_scaled) + 30)))
 
 write.csv(combined_df, file.path(output_dir, "de_all_celltypes_combined.csv"), row.names = FALSE)
 
 cat("=== Done. Outputs in", output_dir, "===\n")
 cat("  de_<cell_type>.csv          -- per-cell-type DESeq2 results\n")
 cat("  de_all_celltypes_combined.csv -- all cell types concatenated\n")
-cat("  volcano_plots/volcano_<cell_type>.png\n")
-cat("  top_de_genes_heatmap.png\n")
+cat("  volcano_plots/volcano_<cell_type>.{pdf,svg,png,tiff}\n")
+cat("  top_de_genes_heatmap.{pdf,svg,png,tiff}\n")

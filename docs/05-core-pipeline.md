@@ -4,6 +4,15 @@ Load → QC → normalize → cluster → annotate. Run each step by hand once, 
 small dataset (page 4), and look at what it writes before you ever chain them
 into one job (page 11). The plots are where problems show up.
 
+> **Before you start**
+> - You are in the code folder, with `$PROJECT` and `$OUT` set ([page 1](01-getting-started.md)).
+> - You are in an interactive session, with `conda activate scrna` ([page 4](04-test-small-first.md)).
+>   For a big dataset, use the job on [page 11](11-running-on-slurm.md) instead.
+> - Your sample sheet is ready ([page 3](03-your-data.md)).
+>
+> You do not need to create the folders for plots and results: every script creates its own
+> output folders. Only `$PROJECT/logs` must exist beforehand, and page 2 made it.
+
 Every step reads the `.h5ad` file the previous one wrote. The *why* behind
 each step is explained at more depth in
 [teaching/concepts.md](../teaching/concepts.md); the validation numbers are in
@@ -16,13 +25,13 @@ each step is explained at more depth in
 ```bash
 python scripts/00_load_parse_output.py \
   --sample-dir <combined>/all-sample/DGE_filtered all-sample \
-  --sample-sheet samples.csv --output 00_raw.h5ad
+  --sample-sheet $PROJECT/samples.csv --output $OUT/00_raw.h5ad
 ```
 
 Turns split-pipe's (or converted Trailmaker's) `DGE_filtered/` files into one
 AnnData `.h5ad` file, joins your sample sheet, and records each cell's
 sublibrary. Page 3 explains the inputs. For a single sample without a sheet:
-`--sample-dir DGE_filtered/ my_sample`.
+`--sample-dir /path/to/DGE_filtered/ my_sample`.
 
 **Check:** the printed cell and gene counts match what split-pipe reported;
 `joined sample sheet columns: [...]` lists your columns.
@@ -39,14 +48,14 @@ choose the cutoff.
 ## 01 — Quality control
 
 ```bash
-python scripts/01_qc_filter.py --input 00_raw.h5ad --output 01_filtered.h5ad \
-  --plot-dir qc_plots/ --species human --batch-key sample
+python scripts/01_qc_filter.py --input $OUT/00_raw.h5ad --output $OUT/01_filtered.h5ad \
+  --plot-dir $OUT/qc_plots/ --species human --batch-key sample
 ```
 
 | What it does | How |
 |---|---|
 | drops near-empty cells and genes | hard floors: ≥200 genes per cell (`--min-genes`), ≥3 cells per gene (`--min-cells`) |
-| flags outliers | counts, genes and mitochondrial % that sit more than *k* median absolute deviations from the median (`--mad`, default 5) — thresholds adapt to *this* dataset instead of a fixed number |
+| flags outliers | counts and genes more than *k* median absolute deviations from the median, either way, and mitochondrial % above it (`--mad`, default 5) — thresholds adapt to *this* dataset instead of a fixed number |
 | caps mitochondrial % | a hard ceiling as a backstop (`--mt-ceiling`, default 8%) |
 | removes doublets | Scrublet, run **per sample** (`--batch-key sample`) |
 
@@ -57,7 +66,11 @@ python scripts/01_qc_filter.py --input 00_raw.h5ad --output 01_filtered.h5ad \
 donors into one call broke that assumption *and* ran out of memory on a
 987,585-cell run even at 400 GB. Per sample fixed both.
 
-**Check `qc_plots/qc_violin.png`:** do the flagged outliers look like a real
+**A warning to take seriously:** if Scrublet calls almost no doublets, its automatic threshold may
+have failed (this happened on a real run), and the script says so. Doublets are then still in your
+data: look for clusters with very high counts or mixed markers at step 04.
+
+**Check `$OUT/qc_plots/qc_violin.png`:** do the flagged outliers look like a real
 separate tail, or did the threshold cut through the middle of the main
 population? If the latter, `--mad` is too strict for this dataset.
 
@@ -66,7 +79,7 @@ population? If the latter, `--mad` is too strict for this dataset.
 ## 02 — Normalize, select genes, reduce dimensions
 
 ```bash
-python scripts/02_normalize_pca.py --input 01_filtered.h5ad --output 02_pca.h5ad --plot-dir pca_plots/
+python scripts/02_normalize_pca.py --input $OUT/01_filtered.h5ad --output $OUT/02_pca.h5ad --plot-dir $OUT/pca_plots/
 ```
 
 | Step | What it does |
@@ -95,8 +108,8 @@ its output in step 03 with `--use-rep X_pca_harmony`.
 ## 03 — Cluster
 
 ```bash
-python scripts/03_cluster.py --input 02_pca.h5ad --output 03_clustered.h5ad \
-  --plot-dir cluster_plots/ --resolutions 0.2,0.4,0.6,0.8,1.0
+python scripts/03_cluster.py --input $OUT/02_pca.h5ad --output $OUT/03_clustered.h5ad \
+  --plot-dir $OUT/cluster_plots/ --resolutions 0.2,0.4,0.6,0.8,1.0
 ```
 
 Builds a nearest-neighbour graph in PCA space, groups cells with the Leiden
@@ -114,8 +127,8 @@ populations you expect to differ, without fragmenting the obvious ones?
 ## 04b — Annotate cell types
 
 ```bash
-python scripts/04b_better_annotation.py --input 03_clustered.h5ad --output 04b_annotated.h5ad \
-  --plot-dir marker_plots/ --resolution 0.6 --species human --markers-csv top_markers.csv
+python scripts/04b_better_annotation.py --input $OUT/03_clustered.h5ad --output $OUT/04b_annotated.h5ad \
+  --plot-dir $OUT/marker_plots/ --resolution 0.6 --species human --markers-csv $OUT/top_markers.csv
 ```
 
 Two parts: a Wilcoxon test ranks the most distinctive genes of each cluster,
@@ -150,8 +163,9 @@ wrong answer.
 ## 04c — Reference-based labels with CellTypist (optional, human immune cells)
 
 ```bash
-python scripts/04c_celltypist_annotation.py --input 04b_annotated.h5ad --output 04c_celltypist.h5ad \
-  --model /path/to/models/Immune_All_Low.pkl --over-clustering leiden_r0.6 --plot-dir celltypist_plots
+python scripts/04c_celltypist_annotation.py --input $OUT/04b_annotated.h5ad --output $OUT/04c_celltypist.h5ad \
+  --model $PROJECT/references/celltypist/Immune_All_Low.pkl --over-clustering leiden_r0.6 \
+  --plot-dir $OUT/celltypist_plots
 ```
 
 04b scores clusters against a hand-picked marker list. That breaks down when a
@@ -167,21 +181,31 @@ every cell.
 | `celltypist_majority` | majority vote within each cluster of `--over-clustering`, the label to use by default |
 | `celltypist_conf` | confidence of the per-cell label |
 
-The models are **human immune** atlases. Download them once, outside the job
-(the script itself makes no network calls):
-`CELLTYPIST_FOLDER=/path/to/models python -c "import celltypist; celltypist.models.download_models(model=['Immune_All_Low.pkl','Immune_All_High.pkl'])"`.
-Run a second model (e.g. `Immune_All_High`) with `--prefix celltypist_high`
-for broad labels.
+The models are **human immune** atlases. Download them once, before the command above (the
+script itself makes no network calls). Make the folder first, because the download needs it:
+
+```bash
+mkdir -p $PROJECT/references/celltypist
+CELLTYPIST_FOLDER=$PROJECT/references/celltypist python -c "import celltypist; celltypist.models.download_models(model=['Immune_All_Low.pkl','Immune_All_High.pkl'])"
+```
+
+Run a second model for broad labels. Step 05 needs these:
+
+```bash
+python scripts/04c_celltypist_annotation.py --input $OUT/04c_celltypist.h5ad --output $OUT/04c_celltypist.h5ad \
+  --model $PROJECT/references/celltypist/Immune_All_High.pkl --over-clustering leiden_r0.6 \
+  --prefix celltypist_high --plot-dir $OUT/celltypist_plots
+```
 
 ---
 
 ## 05 / 05b — Refine labels per lineage, flag doublets, apply a curated label map (optional)
 
 ```bash
-python scripts/05_refine_annotation.py --input 04c_celltypist.h5ad --outdir refined/ \
+python scripts/05_refine_annotation.py --input $OUT/04c_celltypist.h5ad --outdir $OUT/refined/ \
   --broad-col celltypist_high_majority --fine-col celltypist_label --batch-key sample
-python scripts/05b_apply_label_map.py --input refined/refined.h5ad --output final_labels.h5ad \
-  --subcluster-map my_subcluster_labels.csv --rescued-map my_rescued_labels.csv
+python scripts/05b_apply_label_map.py --input $OUT/refined/refined.h5ad --output $OUT/final_labels.h5ad \
+  --subcluster-map $PROJECT/my_subcluster_labels.csv --rescued-map $PROJECT/my_rescued_labels.csv
 ```
 
 A majority vote over ~25 whole-dataset clusters merges real subtypes, gives
@@ -204,11 +228,11 @@ examples of the format and level of evidence. Write your own for your data.
 ## 05c — Score published gene programs (optional)
 
 ```bash
-python scripts/05c_score_gene_programs.py --input 04b_annotated.h5ad --output 05c_programs.h5ad \
-  --species mouse --summary-csv programs_per_sample.csv --group-col condition
+python scripts/05c_score_gene_programs.py --input $OUT/04b_annotated.h5ad --output $OUT/05c_programs.h5ad \
+  --species mouse --summary-csv $OUT/programs_per_sample.csv --group-col condition
 # Treg programs, Treg cells only:
-python scripts/05c_score_gene_programs.py --input t_cells.h5ad --output t_programs.h5ad --species mouse \
-  --subset-col cell_type --subset-values Treg --summary-csv treg_programs_per_sample.csv
+python scripts/05c_score_gene_programs.py --input $OUT/t_cells.h5ad --output $OUT/t_programs.h5ad --species mouse \
+  --subset-col cell_type --subset-values Treg --summary-csv $OUT/treg_programs_per_sample.csv
 ```
 
 A label says what a cell *is*; a program score says how strongly it runs a
@@ -238,6 +262,39 @@ tissue Treg adaptation (Miragaia et al., *Immunity* 2019,
 [doi:10.1016/j.immuni.2019.01.001](https://doi.org/10.1016/j.immuni.2019.01.001))
 and Tr1 cells (Gagliani et al., *Nat Med* 2013,
 [doi:10.1038/nm.3179](https://doi.org/10.1038/nm.3179)).
+
+---
+
+## 05d — Find ambient and stress genes (optional)
+
+Two things can look like biology. **Ambient RNA:** damaged cells release RNA that ends up with other
+cells, so a T cell can seem to express a macrophage gene. **Stress:** heat-shock and early-response
+genes rise with handling and time on ice, so samples collected on different days can differ for that
+reason alone. Nothing is removed by this step; it gives you lists and flags.
+
+**Part 1, ambient genes.** You need a cluster of low-quality cells (low counts, no clear identity),
+and a clean population in which those genes should not be expressed. Replace the cluster numbers
+with your own, from `$OUT/cluster_plots` and `top_markers.csv`:
+
+```bash
+python scripts/05d_flag_ambient_stress.py --output-dir $OUT/ambient --input $OUT/04b_annotated.h5ad \
+  --low-quality-col leiden_r0.6 --low-quality-values 2 \
+  --reference-col leiden_r0.6 --reference-values 4 8 9
+```
+
+Read `$OUT/ambient/ambient_genes.csv`. To stop those genes shaping the clusters, go back to step 02
+and add `--exclude-hvg-genes $OUT/ambient/ambient_genes.csv`, then redo the later steps.
+
+**Part 2, flag a DE result** (after [page 9](09-differential-expression.md)):
+
+```bash
+python scripts/05d_flag_ambient_stress.py --output-dir $OUT/ambient \
+  --de-table $OUT/pseudobulk_de/de_all_celltypes_combined.csv --ambient-genes $OUT/ambient/ambient_genes.csv
+```
+
+`de_flagged.csv` gains two columns, `stress_gene` and `possible_ambient`. `de_summary_counts.csv` counts
+the hits left without them. If most hits in a comparison are stress genes, ask whether the groups
+were handled differently before reading it as biology.
 
 ---
 

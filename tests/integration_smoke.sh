@@ -6,7 +6,7 @@
 #
 # Run from the repo root, inside the `scrna` env, ON A COMPUTE NODE, e.g.:
 #   sbatch --account=<g> --qos=<q> --cpus-per-task=4 --mem=32gb --time=01:00:00 \
-#     --wrap "conda activate scrna && bash tests/integration_smoke.sh tests/data/integration"
+#     --wrap 'source pipeline/activate_env.sh scrna && bash tests/integration_smoke.sh tests/data/integration'
 # Takes a few minutes; ~2,000 cells.
 set -euo pipefail
 OUT="${1:?Usage: bash tests/integration_smoke.sh OUT_DIR}"
@@ -17,6 +17,11 @@ step() { echo; echo "######## $*"; }
 
 step "fixture (split-pipe v1.9.0 output layout)"
 python tests/synthetic_splitpipe.py "${F}"
+
+step "00c sublibrary overlap: real sublibraries must pass, a planted duplicate must be flagged"
+python scripts/00c_check_sublibrary_overlap.py --run-dir "${F}"/wt_persub/s* --output-dir "${R}/overlap_ok"
+python scripts/00c_check_sublibrary_overlap.py --run-dir "${F}"/wt_persub/s1 "${F}/wt_dup/s1dup" "${F}"/wt_persub/s2 \
+  --output-dir "${R}/overlap_dup" --molecules
 
 step "00 load all-sample/DGE_filtered + sample sheet"
 python scripts/00_load_parse_output.py --sample-dir "${F}/wt_comb/all-sample/DGE_filtered" all-sample \
@@ -54,6 +59,13 @@ step "04b annotate"
 python scripts/04b_better_annotation.py --input "${R}/03_clustered.h5ad" --output "${R}/04b_annotated.h5ad" \
   --plot-dir "${R}/marker_plots" --resolution 0.6 --species human
 
+step "16 atlas figure and 17 group figure (Nature style)"
+python scripts/16_atlas_figure.py --input "${R}/04b_annotated.h5ad" --output-dir "${R}/fig_atlas" \
+  --label-col cell_type_v2 --group-col timepoint --genes CD3E CD8A MS4A1 NOT_A_GENE \
+  --pool-samples 'P2_pre+P2_6h=P2 pooled'
+python scripts/17_group_figure.py --input "${R}/04b_annotated.h5ad" --group-col timepoint --label-col cell_type_v2 \
+  --labels "B cell" "NK cell" --ylabel "Cells (%)" --test --output "${R}/fig_group/composition"
+
 step "12 TCR attach -- combined TCR output"
 python scripts/12_tcr_attach.py --wt-input "${R}/04b_annotated.h5ad" --airr-root "${F}/tcr_comb" \
   --output "${R}/12_tcr.h5ad" --plot-dir "${R}/tcr_plots"
@@ -88,6 +100,11 @@ python scripts/10_pseudobulk_prep.py --input "${R}/04b_annotated.h5ad" --output-
   --condition-col timepoint --pair-col patient
 Rscript scripts/11_pseudobulk_deseq2.R --input-dir="${R}/pseudobulk_paired" --output-dir="${R}/de_paired" \
   --condition-a=6h --condition-b=pre --pair-col=pair
+
+step "05d flag stress and ambient genes in the DE table"
+python scripts/05d_flag_ambient_stress.py --output-dir "${R}/ambient" --input "${R}/04b_annotated.h5ad" \
+  --low-quality-col sublibrary --low-quality-values s1 --reference-col sublibrary --reference-values s2 \
+  --de-table "${R}/de/de_all_celltypes_combined.csv"
 
 step "check against planted truth"
 python tests/check_integration.py "${OUT}"

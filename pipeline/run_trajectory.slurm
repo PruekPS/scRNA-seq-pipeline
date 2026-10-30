@@ -1,7 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=scrna-trajectory
-#SBATCH --account=<GROUP>   # TODO: set via `sbatch --account=... --qos=...` at submission, not by editing this file
-#SBATCH --qos=<GROUP>
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -17,8 +15,7 @@
 #      GPCCA estimator) -- NO RNA velocity, see
 #      docs/reference/trajectory-design.md for why and what that gives up.
 #
-# NEITHER step has been test-run as of this commit -- no real bone-marrow+TME
-# dataset exists yet to validate against. See
+# Tested on synthetic branching data only (tests/synthetic_trajectory.py). See
 # docs/reference/trajectory-design.md for the experimental-design
 # prerequisites (paired compartment sampling, replicate counts) this
 # analysis actually needs before its output means anything. Resource sizing
@@ -31,35 +28,35 @@
 #   sbatch --account=<your-account> --qos=<your-qos> \
 #     --output=/path/to/logs/scrna-trajectory-%j.out \
 #     pipeline/run_trajectory.slurm \
-#     /path/to/OUT_DIR [annotation_col] [root_cluster] [n_states]
+#     /path/to/OUT_DIR ANNOTATION_COL ROOT_CLUSTER [n_states]
 #
-# OUT_DIR must already contain an annotated .h5ad from run_downstream.slurm
-# (04b_annotated.h5ad) or run_pipeline.slurm (04_annotated.h5ad) -- this
-# script prefers 04b_annotated.h5ad if present.
+# ANNOTATION_COL is usually cell_type_v2; ROOT_CLUSTER is a value of it (e.g. HSPC).
+# OUT_DIR must already contain an annotated .h5ad: 04c_celltypist.h5ad if present,
+# else 04b_annotated.h5ad, or name another with INPUT_H5AD=/path/file.h5ad.
 set -euo pipefail
 
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
 ENV_NAME="scrna-traj"   # separate python-3.12 env, see envs/environment_trajectory.yml
 
-OUT_DIR="${1:?Usage: sbatch run_trajectory.slurm /path/to/OUT_DIR [annotation_col] [root_cluster] [n_states]}"
-ANNOTATION_COL="${2:-cell_type_v2}"
-ROOT_CLUSTER="${3:?A --root-cluster value is required (e.g. HSPC) -- pass it as the 3rd positional arg}"
+OUT_DIR="${1:?Usage: sbatch run_trajectory.slurm /path/to/OUT_DIR ANNOTATION_COL ROOT_CLUSTER [n_states]}"
+ANNOTATION_COL="${2:?An annotation column is required (usually cell_type_v2) -- pass it as the 2nd argument}"
+ROOT_CLUSTER="${3:?A root cluster is required (e.g. HSPC) -- pass it as the 3rd argument}"
 N_STATES="${4:-8}"
 
-ANNOTATED_INPUT="${OUT_DIR}/04b_annotated.h5ad"
-if [ ! -f "${ANNOTATED_INPUT}" ]; then
-  ANNOTATED_INPUT="${OUT_DIR}/04_annotated.h5ad"
+ANNOTATED_INPUT="${INPUT_H5AD:-}"
+if [ -z "${ANNOTATED_INPUT}" ]; then
+  for candidate in 04c_celltypist.h5ad 04b_annotated.h5ad 04_annotated.h5ad; do
+    if [ -f "${OUT_DIR}/${candidate}" ]; then ANNOTATED_INPUT="${OUT_DIR}/${candidate}"; break; fi
+  done
 fi
 if [ ! -f "${ANNOTATED_INPUT}" ]; then
-  echo "ERROR: no annotated .h5ad found in ${OUT_DIR} (looked for 04b_annotated.h5ad, 04_annotated.h5ad)." >&2
+  echo "ERROR: no annotated .h5ad found in ${OUT_DIR} (or INPUT_H5AD does not exist)." >&2
   echo "Run pipeline/run_pipeline.slurm and/or pipeline/run_downstream.slurm first." >&2
   exit 1
 fi
 
-module load conda 2>/dev/null || module load mamba 2>/dev/null || true
-conda activate "${ENV_NAME}"
-
 cd "${REPO_ROOT}"
+source pipeline/activate_env.sh "${ENV_NAME}"
 
 echo "=== [1/2] PAGA + diffusion pseudotime (root=${ROOT_CLUSTER}) ==="
 python scripts/08_trajectory_paga.py \

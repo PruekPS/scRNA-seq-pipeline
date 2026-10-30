@@ -90,15 +90,15 @@ def find_one(sample_dir: pathlib.Path, patterns: list[str], what: str) -> pathli
 
 
 def find_matrix_file(sample_dir: pathlib.Path) -> pathlib.Path:
-    return find_one(sample_dir, ["count_matrix*.mtx", "DGE*.mtx", "*.mtx"], "count matrix")
+    return find_one(sample_dir, ["count_matrix*.mtx*", "DGE*.mtx*", "*.mtx*"], "count matrix")
 
 
 def find_genes_file(sample_dir: pathlib.Path) -> pathlib.Path:
-    return find_one(sample_dir, ["all_genes*.csv", "*genes*.csv"], "gene metadata")
+    return find_one(sample_dir, ["all_genes*.csv*", "*genes*.csv*"], "gene metadata")
 
 
 def find_cells_file(sample_dir: pathlib.Path) -> pathlib.Path:
-    return find_one(sample_dir, ["cell_metadata*.csv", "*cell*metadata*.csv"], "cell metadata")
+    return find_one(sample_dir, ["cell_metadata*.csv*", "*cell*metadata*.csv*"], "cell metadata")
 
 
 def pick_column(df: pd.DataFrame, candidates: list[str], what: str) -> str:
@@ -117,7 +117,8 @@ def load_one_sample(sample_dir: pathlib.Path, sample_name: str,
 
     X = scipy.io.mmread(matrix_path).tocsr()
 
-    genes = pd.read_csv(genes_path)
+    # keep_default_na=False: a gene really named "NA" or "NULL" is a name; blanks are handled below
+    genes = pd.read_csv(genes_path, dtype=str, keep_default_na=False).replace("", np.nan)
     gene_name_col = pick_column(genes, GENE_NAME_COLUMN_CANDIDATES, "gene name")
     if "gene_id" in genes.columns:
         n_missing = genes[gene_name_col].isna().sum()
@@ -209,12 +210,12 @@ def main():
         # untouched so TCR/other per-cell tables can still be matched. Only disambiguate on a clash.
         names = pd.Index([n for a in samples for n in a.obs_names])
         if names.is_unique:
-            combined = ad.concat(samples, join="outer")
+            combined = ad.concat(samples, join="outer", merge="same")
         else:
             print("  WARNING: cell names repeat across --sample-dir folders (same folder twice, or "
                   "all-sample plus per-sample folders?) -- appending '-<i>' to keep them apart; "
                   "TCR tables will no longer match these names.")
-            combined = ad.concat(samples, join="outer", index_unique="-")
+            combined = ad.concat(samples, join="outer", merge="same", index_unique="-")
 
     sub = combined.obs_names.to_series().str.extract(r"__(s\d+)$")[0]
     if sub.notna().all():

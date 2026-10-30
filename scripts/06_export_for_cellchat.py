@@ -35,6 +35,7 @@ import pathlib
 
 import scanpy as sc
 import scipy.io as sio
+import scipy.sparse as sp
 
 
 def main():
@@ -77,7 +78,7 @@ def main():
     print(f"Exporting {raw.n_obs} cells x {raw.n_vars} genes (log-normalized, from adata.raw)")
 
     # Transpose: AnnData is cells x genes, CellChat/Matrix::readMM convention is genes x cells.
-    sio.mmwrite(str(out_dir / "normalized_matrix.mtx"), raw.X.T.tocsr())
+    sio.mmwrite(str(out_dir / "normalized_matrix.mtx"), sp.csr_matrix(raw.X).T.tocsr())
 
     raw.var_names.to_series().to_csv(out_dir / "genes.csv", index=False, header=["gene"])
 

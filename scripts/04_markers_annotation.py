@@ -20,11 +20,10 @@ Usage:
 import argparse
 import pathlib
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import pandas as pd
 import scanpy as sc
+
+import figstyle
 
 # Canonical PBMC markers (Satija lab / scanpy PBMC3k tutorials) -- smoke-test only.
 # Kept deliberately specific per category -- see docs/reference/annotation.md
@@ -56,7 +55,7 @@ def annotate_by_markers(adata, groupby, marker_dict):
             sc.tl.score_genes(adata, gene_list=genes, score_name=f"score_{label}", use_raw=True)
 
     score_cols = [f"score_{label}" for label in present if present[label]]
-    cluster_scores = adata.obs.groupby(groupby)[score_cols].mean()
+    cluster_scores = adata.obs.groupby(groupby, observed=True)[score_cols].mean()
     cluster_label = cluster_scores.idxmax(axis=1).str.replace("score_", "", regex=False)
 
     adata.obs["cell_type_demo"] = adata.obs[groupby].map(cluster_label).astype(str)
@@ -67,20 +66,16 @@ def save_marker_plots(adata, groupby, marker_dict, plot_dir):
     plot_dir = pathlib.Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    sc.pl.rank_genes_groups(adata, n_genes=15, sharey=False, show=False)
-    plt.gcf().savefig(plot_dir / "rank_genes_groups.png", dpi=150, bbox_inches="tight")
-    plt.close(plt.gcf())
+    sc.pl.rank_genes_groups(adata, n_genes=15, sharey=False, show=False, fontsize=5, ncols=4)
+    figstyle.save_figure(plt.gcf(), plot_dir / "rank_genes_groups", check=False,
+                         legend="Top genes of each cluster by Wilcoxon score.")
 
-    all_markers = [g for genes in marker_dict.values() for g in genes if g in adata.raw.var_names]
-    fig = sc.pl.dotplot(adata, all_markers, groupby=groupby, use_raw=True, show=False, return_fig=True)
-    fig.savefig(plot_dir / "marker_dotplot.png", dpi=150, bbox_inches="tight")
-    plt.close("all")
+    figstyle.marker_dotplot(adata, marker_dict, groupby, plot_dir / "marker_dotplot",
+                            "Dot size, fraction of cells expressing the gene; colour, mean expression.")
 
-    fig, ax = plt.subplots(figsize=(5, 5))
-    sc.pl.umap(adata, color="cell_type_demo", ax=ax, show=False, legend_loc="right margin")
-    fig.tight_layout()
-    fig.savefig(plot_dir / "umap_annotated_demo.png", dpi=150)
-    plt.close(fig)
+    fig, axes = figstyle.subplots(1, 1, w_mm=80, h_mm=60)
+    figstyle.umap(adata, "cell_type_demo", axes[0, 0])
+    figstyle.save_figure(fig, plot_dir / "umap_annotated_demo", legend="UMAP coloured by the demo cell-type label.")
 
 
 def main():
@@ -93,7 +88,7 @@ def main():
     args = parser.parse_args()
 
     adata = sc.read_h5ad(args.input)
-    groupby = f"leiden_r{args.resolution}"
+    groupby = f"leiden_r{float(args.resolution)}"  # '1' and '1.0' both mean the column leiden_r1.0
     if groupby not in adata.obs:
         raise SystemExit(f"{groupby} not found -- available: {[c for c in adata.obs if c.startswith('leiden_r')]}")
 
@@ -105,8 +100,9 @@ def main():
     print("Demo annotation (mean marker-set score per cluster, argmax label):")
     print(cluster_scores.round(3).to_string())
     print()
-    print(adata.obs.groupby(groupby)["cell_type_demo"].first().to_string())
+    print(adata.obs.groupby(groupby, observed=True)["cell_type_demo"].first().to_string())
 
+    figstyle.apply_style()
     save_marker_plots(adata, groupby, PBMC_MARKERS, args.plot_dir)
 
     if args.markers_csv:

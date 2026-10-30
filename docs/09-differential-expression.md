@@ -3,6 +3,12 @@
 Which genes change between conditions — disease vs. healthy, after vs. before
 treatment — within each cell type.
 
+> **Before you start**
+> - In the code folder, with `$PROJECT` and `$OUT` set and `conda activate scrna`, in a job or
+>   interactive session (pages 1, 4).
+> - `$OUT/04b_annotated.h5ad` exists ([page 5](05-core-pipeline.md)), made with a sample sheet that
+>   has your condition column ([page 3](03-your-data.md)).
+
 ---
 
 ## Why pseudobulk, not a per-cell test
@@ -20,10 +26,10 @@ cell-type proportions are not mistaken for gene changes.
 ## Run it
 
 ```bash
-python scripts/10_pseudobulk_prep.py --input 04b_annotated.h5ad --output-dir pseudobulk/ \
+python scripts/10_pseudobulk_prep.py --input $OUT/04b_annotated.h5ad --output-dir $OUT/pseudobulk/ \
   --condition-col timepoint --sample-col sample --annotation-col cell_type_v2 \
   --covariate-cols patient
-Rscript scripts/11_pseudobulk_deseq2.R --input-dir=pseudobulk/ --output-dir=pseudobulk_de/ \
+Rscript scripts/11_pseudobulk_deseq2.R --input-dir=$OUT/pseudobulk/ --output-dir=$OUT/pseudobulk_de/ \
   --condition-a=6h --condition-b=pre --covariates=patient
 ```
 
@@ -78,12 +84,20 @@ complete pairs. On the synthetic test both give identical results.
 |---|---|
 | `de_<cell_type>.csv` | DESeq2 results per cell type (log2 fold change, p, adjusted p) |
 | `de_all_celltypes_combined.csv` | all cell types together, with the model used in a `design` column |
-| `volcano_plots/volcano_<cell_type>.png` | fold change vs. significance; genes that are large *and* confident sit in the upper corners |
-| `top_de_genes_heatmap.png` | the top genes across every pseudo-sample, grouped by cell type, coloured by z-score |
+| `volcano_plots/volcano_<cell_type>.{pdf,svg,png,tiff}` | fold change vs. significance; genes that are large *and* confident sit in the upper corners |
+| `top_de_genes_heatmap.{pdf,svg,png,tiff}` | the top genes across every pseudo-sample, grouped by cell type, coloured by z-score |
 
 Defaults: significant means adjusted p < 0.05 and |log2 fold change| > 1
 (`--padj-threshold`, `--lfc-threshold`). Grey heatmap cells are genes not
 testable in that cell type (too few counts).
+
+---
+
+## Check for stress and ambient genes
+
+Before reading a result as biology, flag these with step 05d ([page 5](05-core-pipeline.md)). Samples
+collected on different days can differ in heat-shock and early-response genes for handling reasons
+alone: on one real dataset, a large share of the hits in one comparison were of this kind.
 
 ---
 
@@ -117,15 +131,15 @@ environment would downgrade numpy.
 it on a login node, since it is one small download, not compute:
 
 ```bash
-python scripts/14a_fetch_collectri.py references/collectri_human.csv
+python scripts/14a_fetch_collectri.py $PROJECT/references/collectri_human.csv
 ```
 
 Then score the DE results from step 11, the pseudobulk from step 10, or both.
 This step is cheap, so run it inside a job like the other steps:
 
 ```bash
-python scripts/14_tf_activity_ulm.py --net references/collectri_human.csv \
-  --de-dir pseudobulk_de/ --pseudobulk-dir pseudobulk/ --output-dir tf_activity/
+python scripts/14_tf_activity_ulm.py --net $PROJECT/references/collectri_human.csv \
+  --de-dir $OUT/pseudobulk_de/ --pseudobulk-dir $OUT/pseudobulk/ --output-dir $OUT/tf_activity/
 ```
 
 | Input | Uses | Gives |
@@ -147,7 +161,7 @@ python scripts/14_tf_activity_ulm.py --net references/collectri_human.csv \
 with MGI's curated human–mouse homology table (one-to-one orthologs only):
 
 ```bash
-python scripts/14a_fetch_collectri.py references/collectri_mouse.csv --organism mouse
+python scripts/14a_fetch_collectri.py $PROJECT/references/collectri_mouse.csv --organism mouse
 ```
 
 Human TF footprints transferred to mouse this way recover mouse perturbations
@@ -170,15 +184,27 @@ and confirms the scores recover it (page 4).
 ## Optional: pathway-level summary — preranked GSEA (step 15)
 
 ```bash
-python scripts/15_gsea_preranked.py --de-dir pseudobulk_de/ --gmt references/hallmark.gmt \
-  --output-dir gsea/
+python scripts/15_gsea_preranked.py --de-dir $OUT/pseudobulk_de/ --gmt $PROJECT/references/hallmark.gmt \
+  --output-dir $OUT/gsea/
 ```
 
 Ranks every tested gene by DESeq2's `stat` (signed, confidence-weighted, so no
 arbitrary cut-off) and runs preranked GSEA (Subramanian et al., *PNAS* 2005)
-per cell type with gseapy. Gene sets come from a local GMT file (download once,
-e.g. MSigDB Hallmark with `gseapy.get_library("MSigDB_Hallmark_2020", organism="Human")`
-— use mouse gene sets for mouse data). Outputs `gsea_<cell_type>.csv` and
+per cell type with gseapy. Gene sets come from a local GMT file. Download one once, from the login
+node (it is a small download), with this command, which writes `references/hallmark.gmt` in your
+project (use `organism="Mouse"` and a mouse library for mouse data):
+
+```bash
+python - "$PROJECT/references/hallmark.gmt" <<'EOF'
+import sys, gseapy
+sets = gseapy.get_library("MSigDB_Hallmark_2020", organism="Human")
+with open(sys.argv[1], "w") as f:
+    for name, genes in sets.items():
+        f.write(name + "\tna\t" + "\t".join(genes) + "\n")
+EOF
+```
+
+Outputs `gsea_<cell_type>.csv` and
 `gsea_all_celltypes.csv` (term, NES, p, FDR, leading-edge genes). Same caution
 as above: with 2 samples per group, read it as direction, not proof.
 

@@ -63,12 +63,10 @@ Usage:
 import argparse
 import pathlib
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import scanpy as sc
+
+import figstyle
 
 # Finer-grained than scripts/04_markers_annotation.py's PBMC_MARKERS -- more
 # categories so real clusters have somewhere specific to land instead of
@@ -158,7 +156,7 @@ def annotate_with_confidence(adata, groupby, marker_dict, margin=0.5):
 
     score_cols = [f"score_{label}" for label in present if present[label]]
     labels = [c.replace("score_", "", 1) for c in score_cols]
-    cluster_scores = adata.obs.groupby(groupby)[score_cols].mean()
+    cluster_scores = adata.obs.groupby(groupby, observed=True)[score_cols].mean()
     cluster_scores.columns = labels
 
     # z-score each label's column across clusters -- puts every marker set on
@@ -185,16 +183,13 @@ def save_marker_plots(adata, groupby, marker_dict, plot_dir):
     plot_dir = pathlib.Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    all_markers = [g for genes in marker_dict.values() for g in genes if g in adata.raw.var_names]
-    fig = sc.pl.dotplot(adata, all_markers, groupby=groupby, use_raw=True, show=False, return_fig=True)
-    fig.savefig(plot_dir / "marker_dotplot_fine.png", dpi=150, bbox_inches="tight")
-    plt.close("all")
+    figstyle.marker_dotplot(adata, marker_dict, groupby, plot_dir / "marker_dotplot_fine",
+                            "Dot size, fraction of cells expressing the gene; colour, mean expression. "
+                            "Genes are grouped by the cell type they mark.")
 
-    fig, ax = plt.subplots(figsize=(7, 6))
-    sc.pl.umap(adata, color="cell_type_v2", ax=ax, show=False, legend_loc="right margin", legend_fontsize=7)
-    fig.tight_layout()
-    fig.savefig(plot_dir / "umap_annotated_v2.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    fig, axes = figstyle.subplots(1, 1, w_mm=100, h_mm=70)
+    figstyle.umap(adata, "cell_type_v2", axes[0, 0])
+    figstyle.save_figure(fig, plot_dir / "umap_annotated_v2", legend="UMAP coloured by confidence-gated cell-type label.")
 
 
 def main():
@@ -214,7 +209,7 @@ def main():
     marker_dict = SPECIES_MARKERS[args.species]
 
     adata = sc.read_h5ad(args.input)
-    groupby = f"leiden_r{args.resolution}"
+    groupby = f"leiden_r{float(args.resolution)}"  # '1' and '1.0' both mean the column leiden_r1.0
     if groupby not in adata.obs:
         raise SystemExit(f"{groupby} not found -- available: {[c for c in adata.obs if c.startswith('leiden_r')]}")
 
@@ -231,6 +226,7 @@ def main():
           f"(margin >= {args.margin} SD); {n_ambiguous} flagged Ambiguous for manual review.")
     print(pd.Series(results).to_string())
 
+    figstyle.apply_style()
     save_marker_plots(adata, groupby, marker_dict, args.plot_dir)
 
     if args.markers_csv:

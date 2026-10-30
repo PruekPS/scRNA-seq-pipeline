@@ -26,10 +26,9 @@ split-pipe/Trailmaker output doesn't separate spliced/unspliced reads,
 so true velocity needs raw FASTQ reprocessing, which is out of scope
 until that's confirmed feasible and worth doing.
 
-NOT YET TEST-RUN as of this commit -- no real bone-marrow+TME dataset
-exists yet to validate against (see docs/reference/trajectory-design.md
-for the experimental-design prerequisites this analysis actually needs).
-Validate against tests/data/ or a small real subset before trusting output.
+Tested on synthetic branching data (tests/synthetic_trajectory.py), which
+proves the code runs, not that a real trajectory is meaningful: see
+docs/reference/trajectory-design.md for what the experiment must contain.
 
 Input: an annotated, clustered .h5ad -- either scripts/04b_better_annotation.py's
 direct output, or scripts/08_trajectory_paga.py's output if using
@@ -42,13 +41,14 @@ Usage:
         --use-dpt-pseudotime --annotation-col cell_type_v2 --n-states 8
 """
 import argparse
+import functools
 import pathlib
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import cellrank as cr
 import scanpy as sc
+
+import figstyle
 
 
 def build_combined_kernel(adata, args):
@@ -82,44 +82,33 @@ def build_combined_kernel(adata, args):
     weights = {k: v / total for k, v in weights.items()}
     print(f"Combining kernels with normalized weights: {weights}")
 
-    combined = sum(weights[name] * kernels[name] for name in kernels)
-    return combined
+    # functools.reduce, not sum(): sum() starts from the number 0, which CellRank kernels cannot add to.
+    return functools.reduce(lambda a, b: a + b, (weights[name] * kernels[name] for name in kernels))
 
 
 def save_plots(adata, g, annotation_col, plot_dir):
     plot_dir = pathlib.Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    g.plot_spectrum(real_only=True, show=False)
-    plt.gcf().savefig(plot_dir / "eigenvalue_spectrum.png", dpi=150, bbox_inches="tight")
-    plt.close("all")
-
-    g.plot_macrostates(which="all", legend_loc="right", s=60, show=False)
-    plt.gcf().savefig(plot_dir / "macrostates_all.png", dpi=150, bbox_inches="tight")
-    plt.close("all")
-
-    g.plot_macrostates(which="terminal", legend_loc="right", s=60, show=False)
-    plt.gcf().savefig(plot_dir / "macrostates_terminal.png", dpi=150, bbox_inches="tight")
-    plt.close("all")
-
-    g.plot_macrostates(which="initial", s=60, show=False)
-    plt.gcf().savefig(plot_dir / "macrostates_initial.png", dpi=150, bbox_inches="tight")
-    plt.close("all")
-
-    g.plot_coarse_T(annotate=False, show=False)
-    plt.gcf().savefig(plot_dir / "coarse_transition_matrix.png", dpi=150, bbox_inches="tight")
-    plt.close("all")
-
-    g.plot_fate_probabilities(same_plot=True, show=False)
-    plt.gcf().savefig(plot_dir / "fate_probabilities.png", dpi=150, bbox_inches="tight")
-    plt.close("all")
-
-    try:
-        cr.pl.circular_projection(adata, keys=[annotation_col], legend_loc="right", show=False)
-        plt.gcf().savefig(plot_dir / "circular_projection.png", dpi=150, bbox_inches="tight")
-    except Exception as e:
-        print(f"circular_projection skipped: {e}")
-    plt.close("all")
+    # CellRank draws its own figures, so a plot it cannot make (e.g. no initial state found) is
+    # reported and skipped rather than losing hours of computed results.
+    plots = {
+        "eigenvalue_spectrum": lambda: g.plot_spectrum(real_only=True),
+        "macrostates_all": lambda: g.plot_macrostates(which="all", legend_loc="right", s=6),
+        "macrostates_terminal": lambda: g.plot_macrostates(which="terminal", legend_loc="right", s=6),
+        "macrostates_initial": lambda: g.plot_macrostates(which="initial", s=6),
+        "coarse_transition_matrix": lambda: g.plot_coarse_T(annotate=False),
+        "fate_probabilities": lambda: g.plot_fate_probabilities(same_plot=True),
+        "circular_projection": lambda: cr.pl.circular_projection(adata, keys=[annotation_col], legend_loc="right"),
+    }
+    for name, draw in plots.items():
+        try:
+            draw()
+            figstyle.rasterize_points(plt.gcf())
+            figstyle.save_figure(plt.gcf(), plot_dir / name, check=False)
+        except Exception as e:
+            print(f"{name} plot skipped: {e}")
+        plt.close("all")
 
 
 def main():
@@ -152,6 +141,7 @@ def main():
                               "(requires --input to be that script's output)")
     args = parser.parse_args()
 
+    pathlib.Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     adata = sc.read_h5ad(args.input)
 
     if args.annotation_col not in adata.obs:
@@ -168,7 +158,9 @@ def main():
     g.compute_schur()
     g.compute_macrostates(n_states=args.n_states, cluster_key=args.annotation_col)
     g.predict_terminal_states()
-    g.predict_initial_states()
+    # A real dataset can have a state that looks both initial and terminal. That is worth knowing
+    # but is no reason to lose the run, so it is reported below rather than raised as an error.
+    g.predict_initial_states(allow_overlap=True)
 
     print("Terminal states:", list(g.terminal_states.cat.categories))
     print("Initial states:", list(g.initial_states.cat.categories))
@@ -178,6 +170,7 @@ def main():
     print("Computing lineage driver genes...")
     driver_df = g.compute_lineage_drivers()
 
+    figstyle.apply_style()
     save_plots(adata, g, args.annotation_col, args.plot_dir)
 
     if args.drivers_csv:
@@ -189,7 +182,6 @@ def main():
     print(f"Wrote fitted GPCCA estimator to {estimator_path} (avoids recomputing macrostates/fate "
           f"probabilities if only downstream plotting/reporting changes)")
 
-    pathlib.Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     adata.write_h5ad(args.output)
 
 

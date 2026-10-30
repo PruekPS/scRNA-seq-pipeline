@@ -10,13 +10,18 @@ writing into one output folder.
 
 ```bash
 cd /blue/<GROUP>/<USER>/scRNA-seq-pipeline
-mkdir -p logs
+PROJECT=/blue/<GROUP>/<USER>/my_project
+OUT=$PROJECT/results
+ACC="--account=<GROUP> --qos=<your-qos>"
+mkdir -p $PROJECT/logs     # page 2 already did this; harmless to repeat
 ```
 
-> **Always `cd` into the repository before `sbatch`.** The job scripts find
-> `scripts/` relative to where you ran `sbatch` from (`$SLURM_SUBMIT_DIR`), not
-> where the job file lives. Submit from your home folder and the job fails in
-> seconds with "no such file" — this happened while building the pipeline.
+> **Always `cd` into the code folder before `sbatch`.** The job scripts find
+> `scripts/` relative to where you ran `sbatch` from, not where the job file lives. Submit from your
+> home folder and the job stops with a message telling you this.
+
+> **Check `$PROJECT/logs` exists.** SLURM will not create the folder named in `--output`. If it is
+> missing, the job fails at once and writes no log at all.
 
 ---
 
@@ -26,11 +31,15 @@ mkdir -p logs
 |---|---|---|---|
 | `run_pipeline.slurm` | 00 load → 01 QC → 02 PCA → [02b Harmony] → 03 cluster → 04b annotation → [04c CellTypist] | `DGE_DIR OUT_DIR [sample_name] [mad] [sample_sheet.csv]` + optional settings below | 16 CPU, 128 GB, 24 h — ~150k cells in ~30 min; use `--mem=400gb` for ~1M cells |
 | `run_downstream.slurm` | 02b Harmony → 03 cluster → 04b annotation → 06/07 CellChat | `OUT_DIR [batch_key] [resolution] [skip_harmony 0/1] [species]` | 16 CPU, 400 GB, 24 h — proven on ~1M cells |
-| `run_pseudobulk_de.slurm` | 10 → 11 differential expression | `OUT_DIR CONDITION_COL A B [annotation_col] [sample_col]` + optional `COVARIATES=` | 4 CPU, 64 GB, 4 h |
-| `run_trajectory.slurm` | 08 → 09 trajectories (uses `scrna-traj`) | `OUT_DIR [annotation_col] ROOT_CLUSTER [n_states]` | 8 CPU, 200 GB, 12 h — not yet sized on real data |
-| `run_tcr.slurm` | 12 → 13 T-cell receptors | `OUT_DIR WT_H5AD AIRR_ROOT [sample_col] [group_col] [annotation_col]` | 4 CPU, 64 GB, 4 h — not yet sized on real data |
+| `run_pseudobulk_de.slurm` | 10 → 11 differential expression | `OUT_DIR CONDITION_COL A B [annotation_col] [sample_col]` + optional `COVARIATES=`, `PAIR_COL=`, `INPUT_H5AD=` | 4 CPU, 64 GB, 4 h |
+| `run_trajectory.slurm` | 08 → 09 trajectories (uses `scrna-traj`) | `OUT_DIR ANNOTATION_COL ROOT_CLUSTER [n_states]` + optional `INPUT_H5AD=` | 8 CPU, 200 GB, 12 h — not yet sized on real data |
+| `run_tcr.slurm` | 12 → 13 T-cell receptors | `OUT_DIR WT_H5AD AIRR_ROOT [sample_col] [group_col] [annotation_col]` | 4 CPU, 64 GB, 4 h |
 
-The resources are set inside each file; ~1M cells needed 400 GB.
+`[square brackets]` mean optional. The DE and trajectory jobs use `04c_celltypist.h5ad` if present,
+else `04b_annotated.h5ad`; name another file with `INPUT_H5AD=/path/file.h5ad`.
+
+The resources are set inside each file; ~1M cells needed 400 GB. To change them without editing the
+file, add for example `--mem=64gb` to `sbatch`, before the job file's name.
 A run a tenth that size needs much less — see "Memory" below. 16 CPUs can
 exceed a group's regular QoS limit; submit to the burst QoS (`<group>-b`) if
 the job is rejected with `QOSGrpCpuLimit`.
@@ -56,28 +65,37 @@ job if you plan to run it.
 
 ## A full run, end to end
 
+Each block submits one job. **Wait for one to finish** (`squeue -u $USER`) and read its log before the
+next, or chain them as shown further down. `<combined>` is the full path to your combined split-pipe
+output folder.
+
 ```bash
-ACC="--account=<GROUP> --qos=<your-qos>"
-OUT=/blue/<GROUP>/<USER>/results/my_run
-
 # 1. load (with sample sheet), QC, normalize, first clustering
-SAMPLE_SHEET=samples.csv sbatch $ACC --output=logs/pipeline-%j.out \
+SAMPLE_SHEET=$PROJECT/samples.csv sbatch $ACC --output=$PROJECT/logs/pipeline-%j.out \
   pipeline/run_pipeline.slurm <combined>/all-sample/DGE_filtered $OUT all-sample
+```
 
-# 2. Harmony by sublibrary, re-cluster, confident annotation, CellChat
-sbatch $ACC --output=logs/downstream-%j.out \
+**It worked if** the log ends `=== Done. Final object: ...`.
+
+```bash
+# 2. Harmony by sublibrary, re-cluster, confident annotation, CellChat (needs page 2, step 5)
+sbatch $ACC --output=$PROJECT/logs/downstream-%j.out \
   pipeline/run_downstream.slurm $OUT sublibrary 0.6 0 human
+```
 
+```bash
 # 3. differential expression: 6h vs pre, paired by patient
-COVARIATES=patient sbatch $ACC --output=logs/de-%j.out \
+COVARIATES=patient sbatch $ACC --output=$PROJECT/logs/de-%j.out \
   pipeline/run_pseudobulk_de.slurm $OUT timepoint 6h pre
+```
 
+```bash
 # 4. T-cell receptors
-sbatch $ACC --output=logs/tcr-%j.out \
+sbatch $ACC --output=$PROJECT/logs/tcr-%j.out \
   pipeline/run_tcr.slurm $OUT/tcr $OUT/04b_annotated.h5ad <tcr_combined> sample patient
 ```
 
-Steps 3 and 4 need step 2's `04b_annotated.h5ad`. Extra options for step 12
+Your output folder, `$OUT`, is created for you. Steps 3 and 4 need step 2's `04b_annotated.h5ad`. Extra options for step 12
 go in `TCR_ATTACH_EXTRA` (for example `TCR_ATTACH_EXTRA="--strip-tcr-suffix"`).
 
 ---
@@ -91,13 +109,22 @@ list checksums itself), tests each FASTQ for truncation, and writes its own
 `MANIFEST.md5` for later checks:
 
 ```bash
-sbatch --account=<GROUP> --qos=<GROUP> --output=<DEST>/logs/fetch-%j.out \
+mkdir -p <DEST>/logs     # SLURM needs this folder to exist before the job starts
+sbatch --account=<GROUP> --qos=<your-qos> --output=<DEST>/logs/fetch-%j.out \
   pipeline/download/fetch_core_data.slurm <URL> <DEST>
 ```
 
 The password never goes on the command line or into the repository. Before
-submitting, put it in a private `~/.core_download.wgetrc` (`chmod 600`), as the
-script's header shows, and delete that file once the download is verified. The
+submitting, run `nano ~/.core_download.wgetrc`, type these two lines with your own values, and save
+(Ctrl+O, Enter, Ctrl+X):
+
+```text
+user = YOUR_USERNAME
+password = YOUR_PASSWORD
+```
+
+Then run `chmod 600 ~/.core_download.wgetrc`, which makes it private; the job refuses to run
+otherwise. Delete the file with `rm ~/.core_download.wgetrc` once the download is verified. The
 job ends with `all checks passed`. Re-running it is safe: it fetches only
 missing or changed files.
 
@@ -106,9 +133,9 @@ missing or changed files.
 ## Run the next job only if the previous one succeeded
 
 ```bash
-J1=$(SAMPLE_SHEET=samples.csv sbatch --parsable $ACC --output=logs/pipeline-%j.out \
+J1=$(SAMPLE_SHEET=$PROJECT/samples.csv sbatch --parsable $ACC --output=$PROJECT/logs/pipeline-%j.out \
      pipeline/run_pipeline.slurm <combined>/all-sample/DGE_filtered $OUT all-sample)
-sbatch $ACC --dependency=afterok:$J1 --output=logs/downstream-%j.out \
+sbatch $ACC --dependency=afterok:$J1 --output=$PROJECT/logs/downstream-%j.out \
      pipeline/run_downstream.slurm $OUT sublibrary
 ```
 
@@ -121,7 +148,7 @@ one fails.
 
 ```bash
 squeue -u $USER                                             # running and waiting jobs
-tail -f logs/pipeline-<jobid>.out                           # live output
+tail -f $PROJECT/logs/pipeline-<jobid>.out                  # live output (Ctrl+C stops watching, not the job)
 sacct -j <jobid> -X --format=JobID,State,ExitCode,Elapsed,MaxRSS   # after it ends
 ```
 

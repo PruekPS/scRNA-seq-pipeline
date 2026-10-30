@@ -1,7 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=scrna-pseudobulk-de
-#SBATCH --account=<GROUP>   # TODO: set via `sbatch --account=... --qos=...` at submission, not by editing this file
-#SBATCH --qos=<GROUP>
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -15,12 +13,7 @@
 #   -> 11 DESeq2 DE per cell type + volcano plots + top-DE-gene heatmap (R)
 #
 # Dataset-agnostic: --condition-col/--condition-a/--condition-b are supplied
-# at submission time, not hardcoded, since this isn't tied to any one
-# comparison. NEITHER step has been test-run as of this commit -- there is
-# no bundled real condition comparison to validate against by design (see
-# scripts/10_pseudobulk_prep.py docstring). Smoke-test against tests/data/
-# with a synthetic condition column, or a small real subset, before
-# trusting output.
+# at submission time, not hardcoded, since this isn't tied to any one comparison.
 #
 # Usage (run sbatch from inside the repo):
 #   cd /path/to/scRNA-pipeline
@@ -29,8 +22,9 @@
 #     pipeline/run_pseudobulk_de.slurm \
 #     /path/to/OUT_DIR CONDITION_COL CONDITION_A CONDITION_B [annotation_col] [sample_col]
 #
-# OUT_DIR must already contain an annotated .h5ad (04b_annotated.h5ad
-# preferred, falls back to 04_annotated.h5ad) with --condition-col present in
+# OUT_DIR must already contain an annotated .h5ad: 04c_celltypist.h5ad if present,
+# else 04b_annotated.h5ad, or name another with INPUT_H5AD=/path/file.h5ad (for
+# example 05b's final labels). --condition-col must be present in
 # its .obs -- normally added at load time from the sample sheet
 # (scripts/00_load_parse_output.py --sample-sheet, or SAMPLE_SHEET= for
 # pipeline/run_pipeline.slurm).
@@ -39,6 +33,8 @@
 # (comma-separated) to fit ~ covariates + condition, e.g. a paired
 # before/after study:
 #   COVARIATES=patient sbatch ... pipeline/run_pseudobulk_de.slurm OUT_DIR timepoint 6h pre
+# or, when some samples have no partner (uses only pairs seen in both conditions):
+#   PAIR_COL=patient sbatch ... pipeline/run_pseudobulk_de.slurm OUT_DIR timepoint 6h pre
 set -euo pipefail
 
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(pwd)}"
@@ -51,28 +47,32 @@ CONDITION_B="${4:?A second condition level is required (e.g. healthy) -- pass as
 ANNOTATION_COL="${5:-cell_type_v2}"
 SAMPLE_COL="${6:-sample}"
 
-ANNOTATED_INPUT="${OUT_DIR}/04b_annotated.h5ad"
-if [ ! -f "${ANNOTATED_INPUT}" ]; then
-  ANNOTATED_INPUT="${OUT_DIR}/04_annotated.h5ad"
+ANNOTATED_INPUT="${INPUT_H5AD:-}"
+if [ -z "${ANNOTATED_INPUT}" ]; then
+  for candidate in 04c_celltypist.h5ad 04b_annotated.h5ad 04_annotated.h5ad; do
+    if [ -f "${OUT_DIR}/${candidate}" ]; then ANNOTATED_INPUT="${OUT_DIR}/${candidate}"; break; fi
+  done
 fi
 if [ ! -f "${ANNOTATED_INPUT}" ]; then
-  echo "ERROR: no annotated .h5ad found in ${OUT_DIR} (looked for 04b_annotated.h5ad, 04_annotated.h5ad)." >&2
+  echo "ERROR: no annotated .h5ad found in ${OUT_DIR} (or INPUT_H5AD does not exist)." >&2
   exit 1
 fi
-
-module load conda 2>/dev/null || module load mamba 2>/dev/null || true
-conda activate "${ENV_NAME}"
+PAIR_COL="${PAIR_COL:-}"
+PREP_PAIR=(); DE_PAIR=()
+if [ -n "${PAIR_COL}" ]; then PREP_PAIR=(--pair-col "${PAIR_COL}"); DE_PAIR=(--pair-col=pair); fi
 
 cd "${REPO_ROOT}"
+source pipeline/activate_env.sh "${ENV_NAME}"
 
-echo "=== [1/2] Pseudobulk aggregation (condition-col=${CONDITION_COL}) ==="
+echo "=== [1/2] Pseudobulk aggregation of ${ANNOTATED_INPUT} (condition-col=${CONDITION_COL}) ==="
 python scripts/10_pseudobulk_prep.py \
   --input "${ANNOTATED_INPUT}" \
   --output-dir "${OUT_DIR}/pseudobulk" \
   --condition-col "${CONDITION_COL}" \
   --sample-col "${SAMPLE_COL}" \
   --annotation-col "${ANNOTATION_COL}" \
-  --covariate-cols "${COVARIATES:-}"
+  --covariate-cols "${COVARIATES:-}" \
+  ${PREP_PAIR[@]+"${PREP_PAIR[@]}"}
 
 echo "=== [2/2] DESeq2 (${CONDITION_A} vs ${CONDITION_B}) + volcano + heatmap ==="
 Rscript scripts/11_pseudobulk_deseq2.R \
@@ -80,6 +80,7 @@ Rscript scripts/11_pseudobulk_deseq2.R \
   --output-dir="${OUT_DIR}/pseudobulk_de" \
   --condition-a="${CONDITION_A}" \
   --condition-b="${CONDITION_B}" \
-  --covariates="${COVARIATES:-}"
+  --covariates="${COVARIATES:-}" \
+  ${DE_PAIR[@]+"${DE_PAIR[@]}"}
 
 echo "=== Done. Final outputs: ${OUT_DIR}/pseudobulk_de/ ==="

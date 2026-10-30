@@ -114,7 +114,8 @@ def main():
     out = args.output
     r = requests.get(URL, timeout=300)
     r.raise_for_status()
-    net = parse_collectri(pd.read_csv(io.StringIO(r.text), sep="\t"))
+    # keep_default_na=False: a gene really named "NA" is a name, not a missing value
+    net = parse_collectri(pd.read_csv(io.StringIO(r.text), sep="\t", keep_default_na=False))
     if args.organism == "mouse":
         o2o = mgi_one_to_one(args.orthologs)
         n_h = len(net)

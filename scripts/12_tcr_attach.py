@@ -30,9 +30,13 @@ Sanity gate: paired-TCR cells should sit in T-lineage clusters. If most of
 them land in B-cell or myeloid clusters, the match is wrong (or the data are
 doublets) and the script warns loudly -- don't trust such output.
 
-NOT YET RUN ON REAL SPLIT-PIPE TCR OUTPUT. Validated only on a synthetic
-fixture (tests/synthetic_tcr.py) that mimics split-pipe's documented AIRR
-columns, which proves the plumbing, not the real file layout.
+Only TCR_filtered tables are read from --airr-root. split-pipe also writes
+TCR_unfiltered (every barcode, in the same folder tree); picking both up would
+silently add low-confidence barcodes. To use them on purpose, name the files with
+--airr, or pass --include-unfiltered.
+
+Tested on synthetic data in split-pipe's layout (tests/synthetic_splitpipe.py)
+and used on real Parse Evercode TCR output.
 
 Usage:
   python 12_tcr_attach.py --wt-input 04b_annotated.h5ad \\
@@ -50,13 +54,12 @@ import sys
 import warnings
 
 import anndata as ad
-import matplotlib
-
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scirpy as ir
+
+import figstyle
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -76,6 +79,11 @@ def discover_airr(args) -> list[tuple[pathlib.Path, str]]:
     if args.airr_root:
         root = pathlib.Path(args.airr_root)
         paths = [p for p in sorted(root.glob(AIRR_GLOB)) if p.name.endswith((".tsv", ".tsv.gz"))]
+        unfiltered = [p for p in paths if "unfiltered" in p.parent.name.lower()]
+        if unfiltered and not args.include_unfiltered:
+            print(f"  skipping {len(unfiltered)} TCR_unfiltered table(s) -- using TCR_filtered "
+                  "(--include-unfiltered overrides)")
+            paths = [p for p in paths if p not in unfiltered]
         plain = {p for p in paths if p.name.endswith(".tsv")}
         paths = [p for p in paths if not (p.name.endswith(".gz") and p.with_suffix("") in plain)]
         hits = [(path, path.parent.parent.name) for path in paths]
@@ -262,14 +270,15 @@ def sanity_report(adata: ad.AnnData, args, plot_dir: pathlib.Path) -> dict:
         by_ct = (obs.assign(paired=paired).groupby(args.annotation_col, observed=True)["paired"]
                  .agg(["mean", "sum", "size"]).sort_values("mean", ascending=False))
         by_ct.to_csv(plot_dir / "tcr_fraction_by_celltype.csv")
-        fig, ax = plt.subplots(figsize=(7, 0.35 * len(by_ct) + 1.5))
-        ax.barh(by_ct.index.astype(str), by_ct["mean"], color="#1f6f6b")
+        fig, axes = figstyle.subplots(1, 1, w_mm=figstyle.SINGLE, h_mm=3.5 * len(by_ct) + 15)
+        ax = axes[0, 0]
+        ax.barh(by_ct.index.astype(str), by_ct["mean"] * 100, color=figstyle.PALETTE[0], linewidth=0)
         ax.invert_yaxis()
-        ax.set_xlabel("fraction of cells with a paired alpha+beta TCR")
-        ax.set_title("TCR detection by cell type (should peak in T-lineage)")
-        fig.tight_layout()
-        fig.savefig(plot_dir / "tcr_fraction_by_celltype.png", dpi=150)
-        plt.close(fig)
+        ax.set_xlabel("Cells with a paired TCR (%)")
+        figstyle.save_figure(fig, plot_dir / "tcr_fraction_by_celltype",
+                             legend="Share of cells in each cell type with a paired alpha+beta TCR. "
+                                    "It should peak in T-lineage cells.",
+                             source_data=by_ct)
     if args.sample_col in obs.columns:
         per_s = obs.assign(paired=paired).groupby(args.sample_col, observed=True)["paired"].agg(["mean", "sum", "size"])
         per_s.to_csv(plot_dir / "tcr_fraction_by_sample.csv")
@@ -283,6 +292,8 @@ def main():
     p.add_argument("--airr", nargs="+", action="append", metavar=("FILE", "LABEL"),
                    help="One AIRR tsv + optional label (e.g. sublibrary). Repeatable.")
     p.add_argument("--airr-root", help=f"Directory searched recursively for {AIRR_GLOB}")
+    p.add_argument("--include-unfiltered", action="store_true",
+                   help="with --airr-root, also read TCR_unfiltered tables (every barcode, not only called cells)")
     p.add_argument("--output", required=True, help="Output .h5ad (WT + TCR)")
     p.add_argument("--plot-dir", default="tcr_plots")
     p.add_argument("--wt-key-col", default=None, help="obs column holding the WT barcode (default: obs_names)")
@@ -307,6 +318,8 @@ def main():
 
     plot_dir = pathlib.Path(args.plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
+    pathlib.Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+    figstyle.apply_style()
 
     print(f"Reading WT data: {args.wt_input}")
     adata = ad.read_h5ad(args.wt_input)

@@ -4,7 +4,7 @@
 # CellChat and two of its dependencies aren't installable purely from
 # environment.yml -- they need this separate step, run ONCE after the conda
 # env exists. Run as a SLURM job on a compute node, never the login node
-# (see project memory -- login-node compute is against policy here).
+# (login-node compute is against policy on most clusters).
 #
 # Every command below reflects an actual failure hit and fixed on a real
 # HiPerGator run (2026-08-01), not a hypothetical:
@@ -19,10 +19,13 @@
 #     all -- GitHub only. Without it, identifyOverExpressedGenes() errors
 #     outright rather than falling back to a slow implementation.
 #
-# Usage: bash envs/install_r_extras.sh   (from inside a SLURM job)
+# Usage (from the top of this repository; the job's output goes to r-extras-<jobid>.out):
+#   sbatch --account=<GROUP> --qos=<QOS> --cpus-per-task=4 --mem=16gb --time=01:30:00 \
+#     --output=r-extras-%j.out --wrap="bash envs/install_r_extras.sh"
 set -euo pipefail
 
 ENV_NAME="${1:-scrna}"
+module load conda 2>/dev/null || module load mamba 2>/dev/null || true
 
 echo "=== conda-installable deps (precompiled, avoids source-build issues) ==="
 conda install -n "${ENV_NAME}" -c bioconda -c conda-forge \

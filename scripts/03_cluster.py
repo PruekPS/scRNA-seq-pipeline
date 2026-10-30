@@ -17,31 +17,31 @@ Usage:
 import argparse
 import pathlib
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+import numpy as np
 import scanpy as sc
+
+import figstyle
 
 
 def save_cluster_plots(adata, resolutions, plot_dir):
     plot_dir = pathlib.Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    n = len(resolutions)
-    fig, axes = plt.subplots(1, n, figsize=(4.5 * n, 4))
-    axes = [axes] if n == 1 else list(axes)
-    for ax, res in zip(axes, resolutions):
-        sc.pl.umap(adata, color=f"leiden_r{res}", ax=ax, show=False, legend_loc="on data", legend_fontsize=6)
-    fig.tight_layout()
-    fig.savefig(plot_dir / "umap_by_resolution.png", dpi=150)
-    plt.close(fig)
+    ncols = min(3, len(resolutions))
+    nrows = int(np.ceil(len(resolutions) / ncols))
+    fig, axes = figstyle.subplots(nrows, ncols, w_mm=figstyle.DOUBLE, h_mm=55 * nrows)
+    for ax, res in zip(axes.flat, resolutions):
+        figstyle.umap(adata, f"leiden_r{res}", ax, title=f"Resolution {res}", legend_loc="on data",
+                      legend_fontoutline=1)
+    for ax in list(axes.flat)[len(resolutions):]:
+        ax.axis("off")
+    figstyle.save_figure(fig, plot_dir / "umap_by_resolution", check=False,
+                         legend="UMAP coloured by Leiden cluster at each resolution scanned.")
 
     # Sanity check: clusters shouldn't just be a proxy for sequencing depth.
-    fig, ax = plt.subplots(figsize=(5, 5))
-    sc.pl.umap(adata, color="total_counts", ax=ax, show=False)
-    fig.tight_layout()
-    fig.savefig(plot_dir / "umap_by_total_counts.png", dpi=150)
-    plt.close(fig)
+    fig, axes = figstyle.subplots(1, 1, w_mm=70, h_mm=55)
+    figstyle.umap(adata, "total_counts", axes[0, 0])
+    figstyle.save_figure(fig, plot_dir / "umap_by_total_counts", legend="UMAP coloured by transcripts per cell.")
 
 
 def main():
@@ -67,7 +67,9 @@ def main():
     if args.use_rep not in adata.obsm:
         raise SystemExit(f"--use-rep '{args.use_rep}' not found in adata.obsm (available: {list(adata.obsm.keys())})")
 
-    sc.pp.neighbors(adata, n_pcs=args.n_pcs, use_rep=args.use_rep)
+    # A representation can have fewer dimensions than --n-pcs (e.g. 02 was run with --n-pcs 30).
+    n_pcs = min(args.n_pcs, adata.obsm[args.use_rep].shape[1])
+    sc.pp.neighbors(adata, n_pcs=n_pcs, use_rep=args.use_rep)
     sc.tl.umap(adata)
 
     for res in resolutions:
@@ -78,6 +80,7 @@ def main():
         n_clusters = adata.obs[f"leiden_r{res}"].nunique()
         print(f"resolution={res}: {n_clusters} clusters")
 
+    figstyle.apply_style()
     save_cluster_plots(adata, resolutions, args.plot_dir)
 
     pathlib.Path(args.output).parent.mkdir(parents=True, exist_ok=True)

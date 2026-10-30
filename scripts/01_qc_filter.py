@@ -5,10 +5,7 @@ per-cell/per-gene metrics, adaptive median-absolute-deviation (MAD) outlier
 detection (Amezquita et al., OSCA; Hong et al., Nat Commun 2022), and
 doublet flagging via Scrublet.
 
-Input is an AnnData .h5ad with raw counts. Parse Trailmaker exports a
-count matrix (h5ad/Seurat object download); split-pipe's DGE_filtered
-output can be read into AnnData with `sc.read_mtx` + barcodes/genes and
-saved as .h5ad before running this script.
+Input is the raw-count .h5ad written by scripts/00_load_parse_output.py.
 
 Usage:
     python 01_qc_filter.py --input raw.h5ad --output filtered.h5ad --plot-dir qc_plots/
@@ -19,11 +16,11 @@ Usage:
 import argparse
 import pathlib
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import scanpy as sc
+
+import figstyle
 
 # Mitochondrial gene-symbol prefix by species convention. Human/canine
 # reference annotations (Ensembl/NCBI) both typically use an "MT-" prefix
@@ -34,13 +31,14 @@ import scanpy as sc
 SPECIES_MT_PREFIX = {"human": "MT-", "mouse": "mt-", "canine": "MT-"}
 
 
-def is_outlier(adata, metric, n_mads):
-    values = adata.obs[metric]
+def is_outlier(adata, metric, n_mads, upper_only=False):
+    values = adata.obs[metric].to_numpy()
     med = np.median(values)
     mad = np.median(np.abs(values - med))
     if mad == 0:
         return np.zeros(len(values), dtype=bool)
-    return (values < med - n_mads * mad) | (values > med + n_mads * mad)
+    high = values > med + n_mads * mad
+    return high if upper_only else (values < med - n_mads * mad) | high
 
 
 def compute_qc_metrics(adata, mt_prefix):
@@ -59,7 +57,8 @@ def compute_qc_metrics(adata, mt_prefix):
 def flag_outliers(adata, n_mads, hard_mt_ceiling):
     adata.obs["outlier_counts"] = is_outlier(adata, "log1p_total_counts", n_mads)
     adata.obs["outlier_genes"] = is_outlier(adata, "log1p_n_genes_by_counts", n_mads)
-    adata.obs["outlier_mt"] = is_outlier(adata, "pct_counts_mt", n_mads) | (
+    # Upper tail only: a low mitochondrial share is not a sign of a damaged cell.
+    adata.obs["outlier_mt"] = is_outlier(adata, "pct_counts_mt", n_mads, upper_only=True) | (
         adata.obs["pct_counts_mt"] > hard_mt_ceiling
     )
     adata.obs["qc_outlier"] = (
@@ -85,6 +84,13 @@ def flag_doublets(adata, batch_key=None):
         sc.pp.scrublet(adata, batch_key=batch_key)
     else:
         sc.pp.scrublet(adata)
+    # Scrublet's automatic threshold can fail silently: on a real 165k-cell run it called 2 doublets
+    # while clusters of obvious multiplets remained. Say so rather than imply the doublets are gone.
+    rate = float(adata.obs["predicted_doublet"].mean())
+    if rate < 0.001 and adata.n_obs >= 5000:
+        print(f"WARNING: Scrublet called only {rate:.2%} of cells doublets. Its automatic threshold may have "
+              f"failed: do not treat doublets as removed. Check for clusters with very high counts or mixed "
+              f"markers at step 04 (doublet_score is kept in adata.obs).")
     return adata
 
 
@@ -92,18 +98,34 @@ def save_qc_plots(adata, plot_dir):
     plot_dir = pathlib.Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-    for ax, metric in zip(axes, ["total_counts", "n_genes_by_counts", "pct_counts_mt"]):
-        sc.pl.violin(adata, metric, jitter=0.4, ax=ax, show=False)
+    # One violin per sample when there are several, so a bad sample is visible. Individual dots
+    # are drawn only for small data: they add nothing but file size at 100k+ cells.
+    labels = {"total_counts": "Transcripts per cell", "n_genes_by_counts": "Genes per cell",
+              "pct_counts_mt": "Mitochondrial transcripts (%)"}
+    by_sample = "sample" in adata.obs and 1 < adata.obs["sample"].nunique() <= 40
+    fig, axes = figstyle.subplots(1, 3, w_mm=figstyle.DOUBLE, h_mm=50)
+    for ax, (metric, label) in zip(axes[0], labels.items()):
+        sc.pl.violin(adata, metric, groupby="sample" if by_sample else None, stripplot=adata.n_obs < 20000,
+                     jitter=0.4, size=0.3, ax=ax, show=False, rotation=90 if by_sample else None, linewidth=0.3)
+        ax.set_ylabel(label)
+        ax.set_xlabel("")
+        if not by_sample:
+            ax.set_xticks([])
+        figstyle.rasterize_points(ax)
     fig.tight_layout()
-    fig.savefig(plot_dir / "qc_violin.png", dpi=150)
-    plt.close(fig)
+    figstyle.save_figure(fig, plot_dir / "qc_violin",
+                         legend="Quality metrics after the hard floors, before outlier and doublet removal.")
 
-    fig, ax = plt.subplots(figsize=(5, 5))
-    sc.pl.scatter(adata, "total_counts", "n_genes_by_counts", color="pct_counts_mt", ax=ax, show=False)
-    fig.tight_layout()
-    fig.savefig(plot_dir / "qc_scatter_counts_vs_genes.png", dpi=150)
-    plt.close(fig)
+    fig, ax = plt.subplots(figsize=(figstyle.SINGLE * figstyle.MM * 0.7, figstyle.SINGLE * figstyle.MM * 0.6))
+    order = np.argsort(adata.obs["pct_counts_mt"].to_numpy())
+    pts = ax.scatter(adata.obs["total_counts"].to_numpy()[order], adata.obs["n_genes_by_counts"].to_numpy()[order],
+                     c=adata.obs["pct_counts_mt"].to_numpy()[order], s=figstyle.point_size(adata.n_obs), linewidths=0,
+                     cmap=figstyle.SEQUENTIAL, rasterized=True)
+    ax.set_xlabel("Transcripts per cell")
+    ax.set_ylabel("Genes per cell")
+    fig.colorbar(pts, ax=ax, shrink=0.6, label="Mitochondrial (%)").outline.set_linewidth(0.4)
+    figstyle.save_figure(fig, plot_dir / "qc_scatter_counts_vs_genes",
+                         legend="Each dot is one cell, before outlier and doublet removal.")
 
 
 def main():
@@ -147,6 +169,7 @@ def main():
     adata = flag_outliers(adata, n_mads=args.mad, hard_mt_ceiling=args.mt_ceiling)
     adata = flag_doublets(adata, batch_key=args.batch_key or None)
 
+    figstyle.apply_style()
     save_qc_plots(adata, args.plot_dir)
 
     n_before = adata.n_obs

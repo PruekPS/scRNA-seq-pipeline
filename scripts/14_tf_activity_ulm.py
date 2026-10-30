@@ -44,6 +44,10 @@ def ulm(Y, genes, net, min_targets=5):
     net = net[net["target"].isin(gidx)]
     sizes = net.groupby("source").size()
     tfs = sizes.index[sizes >= min_targets]
+    if len(tfs) == 0:
+        raise SystemExit(f"No TF has {min_targets}+ targets among the {len(gidx):,} genes given. The network and the "
+                         "data probably use different gene symbols: human network on mouse genes, or the reverse. "
+                         "Fetch the right one with 14a_fetch_collectri.py.")
     W = np.zeros((len(gidx), len(tfs)))
     tpos = {t: i for i, t in enumerate(tfs)}
     for s, t, w in net[net["source"].isin(tfs)][["source", "target", "weight"]].itertuples(index=False):
@@ -88,9 +92,13 @@ def main():
         files = sorted(f for f in pathlib.Path(args.de_dir).glob("de_*.csv") if f.name != "de_all_celltypes_combined.csv")
         series = {}
         for f in files:
-            d = pd.read_csv(f).dropna(subset=["stat"]).drop_duplicates("gene").set_index("gene")["stat"]
-            name = str(pd.read_csv(f, nrows=1)["cell_type"].iloc[0]) if "cell_type" in pd.read_csv(f, nrows=1) else f.stem[3:]
+            # Only 'stat' has real missing values; a gene really named "NA" must stay a name.
+            table = pd.read_csv(f, keep_default_na=False, na_values={"stat": ["NA", ""]})
+            d = table.dropna(subset=["stat"]).drop_duplicates("gene").set_index("gene")["stat"]
+            name = str(table["cell_type"].iloc[0]) if "cell_type" in table.columns and len(table) else f.stem[3:]
             series[name] = d
+        if not series:
+            raise SystemExit(f"no de_*.csv files in {args.de_dir} -- run scripts/11_pseudobulk_deseq2.R first")
         M = pd.DataFrame(series)
         M = M.dropna()  # genes tested in every contrast
         T, P, sizes = ulm(M.values, M.index.tolist(), net, args.min_targets)
@@ -102,7 +110,7 @@ def main():
         d = pathlib.Path(args.pb_dir)
         X = scipy.io.mmread(d / "pseudobulk_counts.mtx")
         X = (X.toarray() if sp.issparse(X) else np.asarray(X)).astype(float)   # genes x pseudo-samples
-        genes = pd.read_csv(d / "genes.csv")["gene"].tolist()
+        genes = pd.read_csv(d / "genes.csv", keep_default_na=False)["gene"].tolist()
         meta = pd.read_csv(d / "pseudobulk_metadata.csv")
         keep = X.sum(axis=1) >= 10
         X, genes = X[keep], [g for g, k in zip(genes, keep) if k]

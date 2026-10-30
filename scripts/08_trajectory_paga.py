@@ -19,10 +19,10 @@ This step's pseudotime feeds scripts/09_cellrank_fate_mapping.py as an
 OPTIONAL second signal alongside CytoTRACE (--use-dpt-pseudotime there) --
 CellRank's CytoTRACE kernel does not require this step to have been run.
 
-NOT YET TEST-RUN as of this commit -- no real bone-marrow+TME dataset
-exists yet to validate against (see docs/reference/trajectory-design.md
-for the experimental-design prerequisites). Validate against tests/data/
-or a small real subset before trusting output.
+Tested on synthetic branching data (tests/synthetic_trajectory.py), which
+proves the code runs and recovers a planted order, not that a real trajectory
+is meaningful: see docs/reference/trajectory-design.md for what the experiment
+must contain.
 
 Input: an annotated, clustered .h5ad (scripts/04b_better_annotation.py
 output, ideally after Harmony integration for multi-sample data).
@@ -34,11 +34,10 @@ Usage:
 import argparse
 import pathlib
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import scanpy as sc
+
+import figstyle
 
 
 def compute_root_cell(adata, annotation_col, root_cluster):
@@ -48,14 +47,15 @@ def compute_root_cell(adata, annotation_col, root_cluster):
             f"--root-cluster '{root_cluster}' not found in adata.obs['{annotation_col}'] "
             f"(available: {sorted(adata.obs[annotation_col].unique())})"
         )
-    # Heuristic, not ground truth: among cells in the root cluster, pick the
-    # one furthest out along the first diffusion component as the single
-    # representative "root" DPT needs -- typically a purer/more extreme
-    # member of that population, less likely a boundary/doublet-like cell.
+    # Heuristic, not ground truth: DPT needs one root cell, and this takes the most central cell of
+    # the root cluster in diffusion space. Not the most extreme one along a component: in a branching
+    # test that was a cell on the cluster's edge, heading into one branch, and pseudotime no longer
+    # followed the true order (Spearman 0.2, against 0.7-0.9 from the centre; tests/synthetic_trajectory.py).
     # Override with --root-cell-index if a specific cell is known to be better.
-    dc1 = adata.obsm["X_diffmap"][:, 1]  # component 0 is the trivial/constant one
+    dcs = adata.obsm["X_diffmap"][:, 1:6]  # component 0 is the trivial/constant one
     candidates = np.flatnonzero(mask)
-    root_idx = candidates[np.argmax(np.abs(dc1[candidates]))]
+    centre = dcs[candidates].mean(axis=0)
+    root_idx = candidates[np.argmin(((dcs[candidates] - centre) ** 2).sum(axis=1))]
     return int(root_idx)
 
 
@@ -63,18 +63,17 @@ def save_plots(adata, annotation_col, plot_dir):
     plot_dir = pathlib.Path(plot_dir)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    fig, ax = plt.subplots(figsize=(6, 6))
-    sc.pl.paga(adata, color=annotation_col, ax=ax, show=False, fontsize=7)
-    fig.tight_layout()
-    fig.savefig(plot_dir / "paga_graph.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    fig, axes = figstyle.subplots(1, 1, w_mm=figstyle.SINGLE, h_mm=figstyle.SINGLE)
+    sc.pl.paga(adata, color=annotation_col, ax=axes[0, 0], show=False, fontsize=5, frameon=False, node_size_scale=0.5,
+               edge_width_scale=0.3)
+    figstyle.save_figure(fig, plot_dir / "paga_graph", check=False,
+                         legend="PAGA graph: nodes are cell types, edge width is connectivity.")
 
-    fig, axes = plt.subplots(1, 2, figsize=(11, 5))
-    sc.pl.umap(adata, color="dpt_pseudotime", ax=axes[0], show=False, title="Diffusion pseudotime")
-    sc.pl.umap(adata, color=annotation_col, ax=axes[1], show=False, title="Annotation", legend_fontsize=6)
-    fig.tight_layout()
-    fig.savefig(plot_dir / "umap_dpt_pseudotime.png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
+    fig, axes = figstyle.subplots(1, 2, w_mm=figstyle.DOUBLE, h_mm=60)
+    figstyle.umap(adata, "dpt_pseudotime", axes[0, 0], title="Diffusion pseudotime")
+    figstyle.umap(adata, annotation_col, axes[0, 1], title="Annotation")
+    figstyle.save_figure(fig, plot_dir / "umap_dpt_pseudotime",
+                         legend="UMAP coloured by diffusion pseudotime and by cell type.")
 
 
 def main():
@@ -120,6 +119,7 @@ def main():
     print(f"dpt_pseudotime range: [{adata.obs['dpt_pseudotime'].min():.4f}, "
           f"{adata.obs['dpt_pseudotime'].max():.4f}]")
 
+    figstyle.apply_style()
     save_plots(adata, args.annotation_col, args.plot_dir)
 
     pathlib.Path(args.output).parent.mkdir(parents=True, exist_ok=True)

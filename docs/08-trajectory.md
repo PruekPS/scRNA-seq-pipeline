@@ -5,11 +5,15 @@ Clustering shows *which* cell states exist. It cannot show order or direction
 (for example progenitors maturing into tumour-infiltrating immune cells),
 these two optional steps add that.
 
-> **Status: built, not yet run on real data.** The code is checked against
-> CellRank's current documentation, but no suitable dataset has existed to run
-> it on. The full design, including what the experiment must contain, is in
-> [reference/trajectory-design.md](reference/trajectory-design.md) — read it
+> **Status: tested on synthetic branching data only** (`tests/synthetic_trajectory.py`),
+> not on a real dataset. The full design, including what the experiment must contain, is in
+> [reference/trajectory-design.md](reference/trajectory-design.md): read it
 > before planning samples.
+
+> **Before you start**
+> - In the code folder, with `$OUT` set, in a job or interactive session (pages 1, 4).
+> - The `scrna-traj` environment is installed ([page 2](02-installation.md), step 6).
+> - `$OUT/04b_annotated.h5ad` exists, and you have chosen the starting population.
 
 ---
 
@@ -32,11 +36,12 @@ read counts, which standard split-pipe/Trailmaker output does not provide.
 These steps need the separate Python 3.12 environment (page 2):
 
 ```bash
+conda deactivate          # only if another environment is active
 conda activate scrna-traj
-python scripts/08_trajectory_paga.py --input 04b_annotated.h5ad --output 08_paga.h5ad \
-  --plot-dir paga_plots/ --annotation-col cell_type_v2 --root-cluster HSPC
-python scripts/09_cellrank_fate_mapping.py --input 08_paga.h5ad --output 09_cellrank.h5ad \
-  --plot-dir cellrank_plots/ --drivers-csv lineage_drivers.csv \
+python scripts/08_trajectory_paga.py --input $OUT/04b_annotated.h5ad --output $OUT/08_paga.h5ad \
+  --plot-dir $OUT/paga_plots/ --annotation-col cell_type_v2 --root-cluster HSPC
+python scripts/09_cellrank_fate_mapping.py --input $OUT/08_paga.h5ad --output $OUT/09_cellrank.h5ad \
+  --plot-dir $OUT/cellrank_plots/ --drivers-csv $OUT/lineage_drivers.csv \
   --annotation-col cell_type_v2 --n-states 8 --use-dpt-pseudotime
 ```
 

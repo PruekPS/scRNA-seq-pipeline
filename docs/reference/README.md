@@ -21,5 +21,5 @@ numbers computed, not estimated.
 | Steps | Status |
 |---|---|
 | 00–04b, 02b Harmony, 06–07 CellChat | validated on real Parse data at full scale (~1M cells) |
-| 10–11 pseudobulk DE (incl. per-experiment design), 12–13 TCR | tested on synthetic data in split-pipe's output format with planted truth; not yet on real data |
-| 08–09 trajectories | built and checked against CellRank's documentation; not yet run |
+| 10–11 pseudobulk DE (incl. per-experiment design), 12–13 TCR | tested on synthetic data in split-pipe's output format with planted truth, and used on real Parse datasets |
+| 08–09 trajectories | tested on synthetic branching data only; not on a real dataset |

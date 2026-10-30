@@ -1,7 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=scrna-downstream
-#SBATCH --account=<GROUP>   # TODO: set via `sbatch --account=... --qos=...` at submission, not by editing this file
-#SBATCH --qos=<GROUP>
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -56,10 +54,8 @@ if [ ! -f "${PCA_H5AD}" ]; then
   exit 1
 fi
 
-module load conda 2>/dev/null || module load mamba 2>/dev/null || true
-conda activate "${ENV_NAME}"
-
 cd "${REPO_ROOT}"
+source pipeline/activate_env.sh "${ENV_NAME}"
 
 CLUSTER_INPUT="${PCA_H5AD}"
 USE_REP="X_pca"

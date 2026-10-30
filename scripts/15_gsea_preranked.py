@@ -28,10 +28,11 @@ import pandas as pd
 
 def read_gmt(path):
     sets = {}
-    for line in open(path):
-        parts = line.rstrip("\n").split("\t")
-        if len(parts) >= 3:
-            sets[parts[0]] = [g for g in parts[2:] if g]
+    with open(path) as handle:
+        for line in handle:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 3:
+                sets[parts[0]] = [g for g in parts[2:] if g]
     return sets
 
 
@@ -59,7 +60,8 @@ def main():
 
     allres = []
     for f in files:
-        de = pd.read_csv(f)
+        # Only 'stat' has real missing values; a gene really named "NA" must stay a name.
+        de = pd.read_csv(f, keep_default_na=False, na_values={"stat": ["NA", ""]})
         ct = de["cell_type"].iloc[0] if "cell_type" in de.columns else f.stem[3:]
         rnk = (de.dropna(subset=["stat"]).drop_duplicates("gene")
                .set_index("gene")["stat"].sort_values(ascending=False))

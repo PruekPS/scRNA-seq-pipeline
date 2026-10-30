@@ -8,7 +8,7 @@ symptom, read what it means, do what it says.
 ## First: read the log
 
 ```bash
-tail -50 logs/<name>-<jobid>.out
+tail -50 $PROJECT/logs/<name>-<jobid>.out
 sacct -j <jobid> -X --format=JobID,State,ExitCode,Elapsed,MaxRSS
 ```
 
@@ -22,7 +22,14 @@ problem. The log nearly always has the Python or R error spelled out.
 
 | Symptom | What it means | What to do |
 |---|---|---|
-| `python: can't open file '.../scripts/...'` | you ran `sbatch` from the wrong folder | `cd` into the repository, resubmit (page 11) |
+| `this job was submitted from ..., which is not the pipeline folder`, or `python: can't open file '.../scripts/...'` | you ran `sbatch` from the wrong folder | `cd` into the code folder, resubmit (page 11) |
+| the job vanishes at once and **there is no log file** | the folder in `--output` does not exist; SLURM will not create it | `mkdir -p $PROJECT/logs`, resubmit |
+| `Invalid account or account/partition combination` or `Invalid qos specification` | `--account` or `--qos` is wrong, or still has the angle brackets | find your values: `sacctmgr show assoc user=$USER format=account,qos` |
+| `QOSGrpCpuLimit` in `squeue` | your group's CPU limit is in use, or the job asks for more than it allows | wait, ask for fewer CPUs (`--cpus-per-task=8`), or use the burst QoS (`<group>-b`) if you have one |
+| `could not activate the conda environment` | the environment is missing, or conda looks elsewhere | run `pipeline/check_setup.sh` (page 2, step 7), which says what to do |
+| `command not found: python`, or `No module named scanpy` | the environment is not active in this session | `module load conda`, then `conda activate scrna` |
+| `No such file or directory`, with a path starting oddly such as `/results/x.h5ad` | a saved value such as `$OUT` is empty, because you logged out or opened a new session | set them again (page 1), and check with `echo $OUT` |
+| `unrecognized arguments` with an odd word | a `\` at the end of a line is followed by a space, or a value with spaces has no quotes | remove the space; put quotes around values with spaces: `--labels "B cell"` |
 | state `OUT_OF_MEMORY`, or "Killed" in the log | the job used more memory than requested | check `MaxRSS`; then see the next table before asking for more |
 | `PENDING` for a long time | waiting for a free machine | normal; do not resubmit. Smaller memory/time requests start sooner |
 
@@ -47,6 +54,7 @@ workers before asking for more memory.
 | `dependencies X are not available` installing an R package from GitHub | the installer looks only on CRAN; X is a Bioconductor package | install X with conda first (already done in `envs/install_r_extras.sh`) |
 | a C/C++ compile fails with a linker error | the cluster's compilers lack a library the source build needs | use the precompiled conda-forge / bioconda build instead |
 | `namespace X ... >= Y is required` | conda's newest build of X is older than needed | check `conda search X`; install that one from CRAN instead (done for NMF) |
+| `No space left on device`, or `Disk quota exceeded`, during an install | conda is filling your home folder | page 2, step 3, then delete the partial environment with `conda env remove -n scrna` and install again |
 | `No module named 'pkg_resources'` reading TCR tables | setuptools 81+ removed it; scirpy's `airr` still needs it | `setuptools<81` (pinned in `environment.yml`, or run `envs/install_tcr.slurm`) |
 | `cellrank` will not install into `scrna` | CellRank needs Python ≥3.12, `scrna` is 3.11 | use the separate `scrna-traj` environment (page 2) |
 | an install "succeeded" but the script fails to import | a clean exit is not proof it worked | always run the verify step on page 2 |
@@ -58,6 +66,12 @@ workers before asking for more memory.
 | Symptom | Meaning | What to do |
 |---|---|---|
 | loader stops: `Samples with cells but no --sample-sheet row` | sheet names differ from split-pipe's sample names | copy the names exactly (case, underscores) |
+| `00c` says `FLAGGED`: two sublibraries share most barcodes | the same material is in both libraries | stop and check the bench records; see page 3 |
+| UMAP has small islands that are each one sample, one sublibrary and one well | a library with short inserts | `00d_check_read_structure.py` (page 3) |
+| step 01 warns Scrublet called only a few doublets | its automatic threshold may have failed | doublets are still there: look for clusters with very high counts or mixed markers |
+| step 14 stops: `No TF has 5+ targets` | the network's species does not match the data | fetch the right one with `14a_fetch_collectri.py` (page 9) |
+| step 13 stops: `No cell has a usable TCR` | no TCR cell passed step 12 | read step 12's match rate and chain-pairing report |
+| `layout note ...: overlap` while saving a figure | two labels overlap | look at the figure; shorten names, or move the labels in Illustrator using the PDF (page 13) |
 | some samples have only a few hundred cells, each with tens of thousands of transcripts | split-pipe's per-sample cell cutoff landed above the main population | run `00a_check_cell_calls.py`; if it flags samples, load `DGE_unfiltered` with `--min-counts`/`--min-genes` (page 3) |
 | mouse data: QC removes almost nothing for mitochondria, and `0 genes matched mt-prefix 'MT-'` | species left at the human default | `--species mouse` (step 01) or `SPECIES=mouse` for `run_pipeline.slurm` |
 | tissue cells (lung, tumour, stroma) labelled "Platelet" or "HSPC" by 04b | 04b's marker sets are blood-focused | read `top_markers.csv` and label those clusters yourself, or extend the marker dictionary |
@@ -84,6 +98,4 @@ result hold in every sample, or only when pooled?
 
 ---
 
-That is the end of the guide. For the concepts behind each step, and
-exercises, see [teaching/](../teaching/README.md). For the design decisions and
-validation reports, see [docs/reference/](reference/README.md).
+Next: [13. Publication figures](13-publication-figures.md)

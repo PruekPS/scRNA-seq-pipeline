@@ -1,7 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=scrna-pipeline
-#SBATCH --account=<GROUP>   # TODO: set via `sbatch --account=... --qos=...` at submission, not by editing this file
-#SBATCH --qos=<GROUP>
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -82,11 +80,8 @@ CELLTYPIST_MODEL2="${CELLTYPIST_MODEL2:-}"
 
 mkdir -p "${OUT_DIR}"
 
-module load conda 2>/dev/null || module load mamba 2>/dev/null || true
-conda activate "${ENV_NAME}"
-
 cd "${REPO_ROOT}"
-echo "repo: ${REPO_ROOT} @ $(cat REVISION 2>/dev/null || git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+source pipeline/activate_env.sh "${ENV_NAME}"
 
 META_ARGS=()
 if [[ -n "${SAMPLE_SHEET}" ]]; then

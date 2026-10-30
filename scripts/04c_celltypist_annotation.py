@@ -33,11 +33,10 @@ Usage:
 import argparse
 import pathlib
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import scanpy as sc
+
+import figstyle
 
 
 def main():
@@ -88,13 +87,13 @@ def main():
     print(f"\nMedian per-cell confidence: {adata.obs[f'{p}_conf'].median():.3f}")
 
     plot_dir = pathlib.Path(args.plot_dir)
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    figstyle.apply_style()
     if "X_umap" in adata.obsm:
         for col in (f"{p}_majority", f"{p}_label"):
-            sc.pl.umap(adata, color=col, show=False, frameon=False, size=1,
-                       legend_loc="on data", legend_fontsize=5)
-            plt.savefig(plot_dir / f"umap_{col}.png", dpi=150, bbox_inches="tight")
-            plt.close("all")
+            fig, axes = figstyle.subplots(1, 1, w_mm=figstyle.ONE_AND_HALF, h_mm=80)
+            figstyle.umap(adata, col, axes[0, 0], legend_loc="on data", legend_fontoutline=1)
+            figstyle.save_figure(fig, plot_dir / f"umap_{col}", check=False,
+                                 legend=f"UMAP coloured by CellTypist label ({col}).")
 
     pathlib.Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     adata.write_h5ad(args.output)

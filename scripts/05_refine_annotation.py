@@ -49,14 +49,13 @@ Usage:
 import argparse
 import pathlib
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scanpy as sc
 import scanpy.external as sce
 import scipy.sparse as sp
+
+import figstyle
 
 # Broad CellTypist (Immune_All_High) label -> lineage group. Matching is by
 # lowercase substring, first hit wins; unmatched labels go to "other".
@@ -69,7 +68,7 @@ GROUP_RULES = [
 LINEAGE_MARKERS = {
     "T_NK": ["CD3E", "CD3D", "CD2", "IL7R", "NKG7", "GNLY"],
     "B_plasma": ["MS4A1", "CD79A", "CD79B", "MZB1"],
-    "myeloid": ["LYZ", "CD14", "S100A8", "S100A9", "FCN1", "CST3"],
+    "myeloid": ["LYZ", "LYZ2", "CD14", "S100A8", "S100A9", "FCN1", "CST3"],
 }
 DEFAULT_RARE = ["Plasma cells", "Plasmablasts", "Megakaryocytes/platelets", "HSC/MPP",
                 "Mast cells", "pDC", "DC1", "DC2", "MAIT cells", "Regulatory T cells",
@@ -145,6 +144,7 @@ def main():
 
     out = pathlib.Path(args.outdir)
     out.mkdir(parents=True, exist_ok=True)
+    figstyle.apply_style()
     adata = sc.read_h5ad(args.input)
     for col in (args.broad_col, args.fine_col, args.conf_col, args.batch_key):
         if col not in adata.obs:
@@ -156,16 +156,19 @@ def main():
     print("Lineage groups:\n" + adata.obs["lineage_group"].value_counts().to_string())
 
     # per-cell cross-lineage marker scores (log1p CP10k), computed once on the full object
-    all_markers = sorted({g for v in LINEAGE_MARKERS.values() for g in v if g in adata.var_names})
+    # Matched without regard to letter case, so mouse symbols (Cd3e) find the same markers.
+    by_upper = {g.upper(): g for g in adata.var_names}
+    lineage_genes = {lg: [by_upper[g] for g in v if g in by_upper] for lg, v in LINEAGE_MARKERS.items()}
+    all_markers = sorted({g for v in lineage_genes.values() for g in v})
     mi = [adata.var_names.get_loc(g) for g in all_markers]
     lib = np.asarray(adata.layers["counts"].sum(axis=1)).ravel()
     cm = adata.layers["counts"][:, mi]
     cm = cm.toarray() if sp.issparse(cm) else np.asarray(cm)
     expr = pd.DataFrame(np.log1p(cm / np.maximum(lib, 1)[:, None] * 1e4), columns=all_markers,
                         index=adata.obs_names)
-    for lg, genes in LINEAGE_MARKERS.items():
-        genes = [g for g in genes if g in expr.columns]
-        adata.obs[f"score_{lg}"] = expr[genes].mean(axis=1).values
+    for lg, genes in lineage_genes.items():
+        # No marker in this dataset (e.g. another species): score 0, so it can never flag a doublet.
+        adata.obs[f"score_{lg}"] = expr[genes].mean(axis=1).values if genes else 0.0
 
     adata.obs["subcluster"] = ""
     adata.obs["cell_type_refined"] = adata.obs[args.fine_col].astype(str)
@@ -237,15 +240,13 @@ def main():
         adata.obs.iloc[idx, adata.obs.columns.get_loc("cell_type_refined")] = refined.values
         adata.obs.iloc[idx, adata.obs.columns.get_loc("doublet_flag")] = refined.str.startswith("Doublet").values
 
-        fig, axes = plt.subplots(1, 3, figsize=(21, 6.5))
-        sc.pl.umap(sub, color="subcluster", ax=axes[0], show=False, legend_loc="on data", legend_fontsize=6,
-                   frameon=False, size=2, title=f"{grp}: subclusters")
-        sc.pl.umap(sub, color="cell_type_refined", ax=axes[1], show=False, frameon=False, size=2,
-                   legend_fontsize=6, title="refined label")
-        sc.pl.umap(sub, color=args.batch_key, ax=axes[2], show=False, frameon=False, size=2,
-                   legend_fontsize=6, title=args.batch_key)
-        fig.savefig(out / f"umap_{grp}.png", dpi=140, bbox_inches="tight")
-        plt.close(fig)
+        fig, axes = figstyle.subplots(1, 3, w_mm=figstyle.DOUBLE, h_mm=55)
+        figstyle.umap(sub, "subcluster", axes[0, 0], title="Subcluster", legend_loc="on data", legend_fontoutline=1)
+        figstyle.umap(sub, "cell_type_refined", axes[0, 1], title="Refined label", legend_loc="on data",
+                      legend_fontoutline=1)
+        figstyle.umap(sub, args.batch_key, axes[0, 2], title=args.batch_key)
+        figstyle.save_figure(fig, out / f"umap_{grp}", check=False,
+                             legend=f"UMAP of the {grp} cells: subcluster, refined label and {args.batch_key}.")
         sub.uns.pop("rank_genes_groups", None)
         sub.write_h5ad(out / f"sub_{grp}.h5ad")
 

@@ -46,6 +46,10 @@ cat(sprintf("Seurat object: %d cells x %d features, assays: %s\n",
             paste(names(seurat_obj@assays), collapse = ", ")))
 
 DefaultAssay(seurat_obj) <- "RNA"
+# Seurat v5 objects can hold one counts layer per sample; GetAssayData needs them joined.
+if (length(Layers(seurat_obj, search = "counts")) > 1) {
+  seurat_obj <- JoinLayers(seurat_obj)
+}
 counts <- GetAssayData(seurat_obj, layer = "counts")
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)

@@ -8,21 +8,24 @@
 #SBATCH --mail-type=END,FAIL
 #
 # Pull a sequencing core's data release (HTTPS directory listing behind
-# basic auth, e.g. UMN Genomics Center) onto HiPerGator, then verify it.
-# Account/QoS/log path are passed at submit time so this file stays generic:
+# basic auth, e.g. UMN Genomics Center) onto the cluster, then verify it.
+# Account/QoS/log path are passed at submit time so this file stays generic.
+# Make the log folder first: SLURM will not create it, and the job fails if it is missing.
 #
+#   mkdir -p <DEST>/logs
 #   sbatch --account=<GROUP> --qos=<GROUP> \
 #          --output=<DEST>/logs/fetch-%j.out \
 #          pipeline/download/fetch_core_data.slurm <URL> <DEST> [CUT_DIRS]
 #
 # Credentials are never on the command line or in this repo. Before
-# submitting, create a private wget config holding them (you type the
-# password; it is not echoed):
+# submitting, create a private wget config holding them. Use an editor: a
+# prompt-based one-liner pasted into a terminal can silently save empty values.
 #
-#   umask 077
-#   read -rp "core username: " U; read -rsp "core password: " P; echo
-#   printf 'user = %s\npassword = %s\n' "$U" "$P" > ~/.core_download.wgetrc
-#   unset U P; chmod 600 ~/.core_download.wgetrc
+#   nano ~/.core_download.wgetrc
+#     user = YOUR_USERNAME
+#     password = YOUR_PASSWORD
+#   (Ctrl+O, Enter, Ctrl+X to save and leave)
+#   chmod 600 ~/.core_download.wgetrc
 #
 # Delete it once the download is verified: rm ~/.core_download.wgetrc
 #

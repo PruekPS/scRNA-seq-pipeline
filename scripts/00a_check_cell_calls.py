@@ -34,11 +34,11 @@ import argparse
 import pathlib
 import sys
 
-import matplotlib
-matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+import figstyle
 
 DEFAULT_THRESHOLDS = [300, 500, 1000, 2000, 5000, 15000]
 
@@ -93,25 +93,24 @@ def plot_ranks(all_ranks: dict, table: pd.DataFrame, path: pathlib.Path):
     runs = list(all_ranks)
     ncol = min(4, len(runs))
     nrow = int(np.ceil(len(runs) / ncol))
-    fig, axes = plt.subplots(nrow, ncol, figsize=(4.2 * ncol, 3.6 * nrow), squeeze=False)
+    fig, axes = figstyle.subplots(nrow, ncol, w_mm=figstyle.DOUBLE, h_mm=45 * nrow)
     samples = sorted({s for r in all_ranks.values() for s in r})
-    colors = {s: plt.cm.tab20(i % 20) for i, s in enumerate(samples)}
+    colors = figstyle.categorical_colors(samples)
     for ax, run in zip(axes.flat, runs):
         for sample, tscp in all_ranks[run].items():
-            ax.loglog(np.arange(1, len(tscp) + 1), np.maximum(tscp, 1), color=colors[sample], lw=1, label=sample)
+            ax.loglog(np.arange(1, len(tscp) + 1), np.maximum(tscp, 1), color=colors[sample], lw=0.6, label=sample)
             r = table[(table["run"] == run) & (table["sample"] == sample)].iloc[0]
             n = max(int(r["splitpipe_cells"]), 1)
-            ax.plot(n, r["splitpipe_cutoff"], "o", color=colors[sample], ms=5, mec="black", mew=0.5)
-        ax.set_title(run, fontsize=9)
-        ax.set_xlabel("barcode rank")
-        ax.set_ylabel("transcripts per barcode")
+            ax.plot(n, r["splitpipe_cutoff"], "o", color=colors[sample], ms=2.5, mec=figstyle.INK, mew=0.3)
+        ax.set_title(run)
+        ax.set_xlabel("Barcode rank")
+        ax.set_ylabel("Transcripts per barcode")
     for ax in list(axes.flat)[len(runs):]:
         ax.axis("off")
-    axes.flat[0].legend(fontsize=6, frameon=False)
-    fig.suptitle("Barcode rank per sample (dot = split-pipe's cutoff and cell count)", fontsize=10)
+    axes.flat[0].legend(ncol=2 if len(samples) > 8 else 1, handlelength=1, labelspacing=0.2)
     fig.tight_layout()
-    fig.savefig(path, dpi=130)
-    plt.close(fig)
+    figstyle.save_figure(fig, path, legend="Barcode-rank curves per sample, one panel per split-pipe run. "
+                                           "Dot, split-pipe's transcript cutoff and cell count for that sample.")
 
 
 def main():
@@ -142,7 +141,8 @@ def main():
 
     table = flag(pd.concat(tables, ignore_index=True), args.max_ratio, args.outlier_ratio)
     table.to_csv(out / "cell_call_check.csv", index=False)
-    plot_ranks(all_ranks, table, out / "barcode_rank.png")
+    figstyle.apply_style()
+    plot_ranks(all_ranks, table, out / "barcode_rank")
 
     with pd.option_context("display.width", 200, "display.max_columns", 50, "display.max_rows", 500):
         print(table.drop(columns="flag").to_string(index=False))

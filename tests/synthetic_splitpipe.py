@@ -18,6 +18,7 @@ validated in this repo (1M PBMC dataset):
   Unfiltered: <wt_comb>/{all-sample,<sample>}/DGE_unfiltered/ = the cells plus EMPTY_PER_SAMPLE
         near-empty barcodes per sample (ambient profile, ~40 counts each), for the
         one-cutoff loading path (00_load --min-counts).
+  wt_dup/s1dup/: a planted copy of sublibrary s1, which 00c_check_sublibrary_overlap.py must flag.
   wt_persub/s<N>/: per-sublibrary run folders as 00a_check_cell_calls.py reads them
         (agg_sample_summary.csv + <sample>/DGE_unfiltered/cell_metadata.csv). Every sample's
         cutoff sits between empty barcodes and cells, except UNSTABLE_SAMPLE in sublibrary
@@ -47,6 +48,7 @@ SAMPLES = {"P1_pre": ("P1", "pre"), "P1_6h": ("P1", "6h"), "P2_pre": ("P2", "pre
 CELLS_PER_SAMPLE = 500
 N_SUBLIBS = 3
 EMPTY_PER_SAMPLE = 600
+DUP_SHARED_MOLECULES = 0.7
 GOOD_CUTOFF = 200  # transcripts; empty barcodes have ~40, cells several hundred or more
 UNSTABLE_SAMPLE, UNSTABLE_SUBLIB = "P2_6h", 3
 TYPES = {  # proportion, marker genes (04b human dictionary)
@@ -150,6 +152,28 @@ def write_persub_runs(root: pathlib.Path, cells, empties, X, X_empty):
             d.mkdir(parents=True, exist_ok=True)
             df[["bc_wells", "sample", "tscp_count"]].to_csv(d / "cell_metadata.csv", index=False)
         pd.DataFrame(summary).to_csv(run / "agg_sample_summary.csv", index=False)
+        d = run / "all-sample" / "DGE_filtered"
+        d.mkdir(parents=True, exist_ok=True)
+        sdf.loc[sdf["is_cell"], ["bc_wells", "sample", "tscp_count"]].to_csv(d / "cell_metadata.csv", index=False)
+
+
+def write_duplicate_library(root: pathlib.Path, source: pathlib.Path, rng):
+    """A copy of one sublibrary run: the same cells, sharing DUP_SHARED_MOLECULES of its molecules
+    (as when amplified cDNA is mixed). Plus molecule tables, for 00c --molecules."""
+    cells = pd.read_csv(source / "all-sample" / "DGE_filtered" / "cell_metadata.csv")
+    d = root / "s1dup" / "all-sample" / "DGE_filtered"
+    d.mkdir(parents=True, exist_ok=True)
+    cells.to_csv(d / "cell_metadata.csv", index=False)
+    n = 20
+    molecules = pd.DataFrame({"bc_wells": np.repeat(cells["bc_wells"].to_numpy(), n),
+                              "gene": [f"G{i}" for i in range(n)] * len(cells),
+                              "polyN": [f"UMI{i}" for i in range(n * len(cells))]})
+    copied = molecules.copy()
+    fresh = rng.random(len(copied)) >= DUP_SHARED_MOLECULES
+    copied.loc[fresh, "polyN"] = [f"NEW{i}" for i in range(int(fresh.sum()))]
+    for run, table in ((source, molecules), (root / "s1dup", copied)):
+        (run / "process").mkdir(parents=True, exist_ok=True)
+        table.to_csv(run / "process" / "tscp_assignment.csv.gz", index=False)
 
 
 def cell_metadata(cells, X):
@@ -206,6 +230,12 @@ def write_tcr_tree(root: pathlib.Path, tcr: pd.DataFrame):
         d = root / s / "TCR_filtered"
         d.mkdir(parents=True, exist_ok=True)
         df.to_csv(d / "tcr_annotation_airr.tsv", sep="\t", index=False)
+        # split-pipe also writes every barcode here: the same cells plus low-confidence ones, in the
+        # same folder tree. Step 12 must not pick these up by accident.
+        extra = df.head(2).assign(cell_id="99_99_99__s1")
+        d = root / s / "TCR_unfiltered"
+        d.mkdir(parents=True, exist_ok=True)
+        pd.concat([df, extra]).to_csv(d / "tcr_annotation_airr.tsv", sep="\t", index=False)
 
 
 def main(out: pathlib.Path):
@@ -230,6 +260,7 @@ def main(out: pathlib.Path):
         write_dge(out / "wt_comb" / s / "DGE_unfiltered", X_unf[m], genes_df, md_unf[m])
     write_dge(out / "wt_comb" / "all-sample" / "DGE_unfiltered", X_unf, genes_df, md_unf)
     write_persub_runs(out / "wt_persub", cells, empties, X, X_empty)
+    write_duplicate_library(out / "wt_dup", out / "wt_persub" / "s1", np.random.default_rng(13))
 
     tcr, truth_clone = make_tcr(cells, rng)
     write_tcr_tree(out / "tcr_comb", tcr)

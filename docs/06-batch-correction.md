@@ -1,5 +1,9 @@
 # 6. Batch correction (Harmony)
 
+> **Before you start**
+> - In the code folder, with `$OUT` set and `conda activate scrna`, in a job or interactive session (pages 1, 4).
+> - `$OUT/02_pca.h5ad` exists ([page 5](05-core-pipeline.md), step 02).
+
 A **batch effect** is a technical difference between groups of cells — a
 different processing run, sequencing lane or reagent lot — that is large
 enough to make cells cluster by *which batch they came from* instead of by
@@ -11,10 +15,10 @@ while keeping real biological differences.
 ## Run it
 
 ```bash
-python scripts/02b_harmony_integration.py --input 02_pca.h5ad --output 02b_harmony.h5ad \
-  --plot-dir harmony_plots/ --batch-key sublibrary
-python scripts/03_cluster.py --input 02b_harmony.h5ad --output 03_clustered.h5ad \
-  --plot-dir cluster_plots/ --use-rep X_pca_harmony
+python scripts/02b_harmony_integration.py --input $OUT/02_pca.h5ad --output $OUT/02b_harmony.h5ad \
+  --plot-dir $OUT/harmony_plots/ --batch-key sublibrary
+python scripts/03_cluster.py --input $OUT/02b_harmony.h5ad --output $OUT/03_clustered.h5ad \
+  --plot-dir $OUT/cluster_plots/ --use-rep X_pca_harmony
 ```
 
 The corrected embedding is added as `X_pca_harmony`; the original PCA is kept.
@@ -47,7 +51,7 @@ trajectory ([page 8](08-trajectory.md)).
 
 ## Check it worked
 
-`harmony_plots/pca_before_after_harmony.png` and a UMAP coloured by the batch
+`$OUT/harmony_plots/pca_before_after_harmony.png` and a UMAP coloured by the batch
 column, before and after:
 
 - **Before:** do batches form their own islands *within* what should be one

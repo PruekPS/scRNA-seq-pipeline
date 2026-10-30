@@ -1,11 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=scrna-tcr
-#SBATCH --account=<GROUP>   # set via `sbatch --account=... --qos=...` at submission
-#SBATCH --qos=<GROUP>
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=64gb          # UNVALIDATED on real data; ~150k cells x one TCR table is modest
+#SBATCH --mem=64gb
 #SBATCH --time=04:00:00
 #SBATCH --mail-type=END,FAIL
 #
@@ -17,13 +15,12 @@
 # Usage (from the repo root):
 #   sbatch --account=<g> --qos=<q> --output=<logs>/scrna-tcr-%j.out pipeline/run_tcr.slurm \
 #     OUT_DIR WT_H5AD AIRR_ROOT [sample_col] [group_col] [annotation_col]
-# Extra flags for step 12 (e.g. "--tcr-suffix-format __{label}") go in the
+# Extra flags for step 12 (e.g. "--tcr-suffix-format __s{label}") go in the
 # TCR_ATTACH_EXTRA environment variable; for step 13 in TCR_ANALYSIS_EXTRA:
 #   TCR_ATTACH_EXTRA="--strip-tcr-suffix" sbatch ... pipeline/run_tcr.slurm ...
 #
-# NOT YET RUN ON REAL DATA -- scripts 12/13 are smoke-tested on
-# tests/synthetic_tcr.py only. Read 12's match-rate line and the
-# tcr_fraction_by_celltype plot before trusting anything downstream.
+# Read 12's match-rate line and the tcr_fraction_by_celltype plot before
+# trusting anything downstream.
 
 set -euo pipefail
 
@@ -37,8 +34,7 @@ ENV_NAME="scrna"
 
 cd "${SLURM_SUBMIT_DIR:-.}"
 mkdir -p "${OUT_DIR}"
-module load conda 2>/dev/null || module load mamba 2>/dev/null || true
-conda activate "${ENV_NAME}"
+source pipeline/activate_env.sh "${ENV_NAME}"
 
 python scripts/12_tcr_attach.py \
   --wt-input "${WT_H5AD}" \

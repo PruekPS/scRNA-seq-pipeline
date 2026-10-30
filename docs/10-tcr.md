@@ -9,12 +9,14 @@ family. A clonotype with many cells has **expanded**, which usually means it
 has been responding to something.
 
 > **Status: tested on synthetic data in split-pipe's exact output format
-> (page 4), not yet on real TCR output.**
+> (page 4), and used on real Evercode TCR output.**
 
 ---
 
 ## Before you start
 
+- You are in the code folder, with `$OUT` set and `conda activate scrna`, in a job or interactive
+  session (pages 1, 4).
 - The WT chain through step 04b is done (pages 5–6).
 - split-pipe has processed each TCR sublibrary against its matching WT
   sublibrary and **combined them in the same order as the WT sublibraries**
@@ -27,9 +29,9 @@ has been responding to something.
 ## Run it
 
 ```bash
-python scripts/12_tcr_attach.py --wt-input 04b_annotated.h5ad \
-  --airr-root <tcr_combined> --output 12_tcr.h5ad --plot-dir tcr_plots/
-python scripts/13_tcr_analysis.py --input 12_tcr.h5ad --output-dir tcr_results/ \
+python scripts/12_tcr_attach.py --wt-input $OUT/04b_annotated.h5ad \
+  --airr-root <tcr_combined> --output $OUT/12_tcr.h5ad --plot-dir $OUT/tcr_plots/
+python scripts/13_tcr_analysis.py --input $OUT/12_tcr.h5ad --output-dir $OUT/tcr_results/ \
   --sample-col sample --group-col patient --annotation-col cell_type_v2
 ```
 
@@ -43,7 +45,8 @@ Python package for single-cell receptor data. On the cluster,
 
 It reads split-pipe's TCR tables (`<sample>/TCR_filtered/tcr_annotation_airr.tsv`,
 or `.tsv.gz`) — a standard "AIRR" format, one row per chain — and matches them
-to your annotated cells by name.
+to your annotated cells by name. It skips the `TCR_unfiltered` folders in the same tree, which hold
+every barcode; use `--include-unfiltered` only if you mean to.
 
 **Read its first lines carefully.** It prints how many TCR cells matched:
 
@@ -61,17 +64,17 @@ For TCR sublibraries processed one by one (not combined), give each table with
 the sublibrary's number in the WT combine list:
 
 ```bash
-python scripts/12_tcr_attach.py --wt-input 04b_annotated.h5ad --tcr-suffix-format '__s{label}' \
+python scripts/12_tcr_attach.py --wt-input $OUT/04b_annotated.h5ad --tcr-suffix-format '__s{label}' \
   --airr tcr_sub1/all-sample/TCR_filtered/tcr_annotation_airr.tsv 1 \
   --airr tcr_sub2/all-sample/TCR_filtered/tcr_annotation_airr.tsv 2 \
-  --output 12_tcr.h5ad
+  --output $OUT/12_tcr.h5ad
 ```
 
 It then defines clonotypes from **identical TRA + TRB CDR3 amino-acid
 sequences** (`--same-v-gene` or `--clone-sequence nt` make it stricter), and
 checks one thing biology guarantees:
 
-**Check `tcr_plots/tcr_fraction_by_celltype.png`:** receptors should be found
+**Check `$OUT/tcr_plots/tcr_fraction_by_celltype.png`:** receptors should be found
 mostly in T cells, rarely in B cells or monocytes. If not, the match is wrong
 or the data are doublets — and nothing after it should be trusted. The script
 warns when fewer than 70% of paired-receptor cells sit in T-lineage clusters.
