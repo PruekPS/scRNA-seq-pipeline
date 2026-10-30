@@ -164,7 +164,7 @@ wrong answer.
 
 ```bash
 python scripts/04c_celltypist_annotation.py --input $OUT/04b_annotated.h5ad --output $OUT/04c_celltypist.h5ad \
-  --model $PROJECT/references/celltypist/Immune_All_Low.pkl --over-clustering leiden_r0.6 \
+  --model $PROJECT/references/celltypist/data/models/Immune_All_Low.pkl --over-clustering leiden_r0.6 \
   --plot-dir $OUT/celltypist_plots
 ```
 
@@ -189,11 +189,14 @@ mkdir -p $PROJECT/references/celltypist
 CELLTYPIST_FOLDER=$PROJECT/references/celltypist python -c "import celltypist; celltypist.models.download_models(model=['Immune_All_Low.pkl','Immune_All_High.pkl'])"
 ```
 
+CellTypist saves them in a `data/models` subfolder of the folder you name, so check with
+`ls $PROJECT/references/celltypist/data/models/`.
+
 Run a second model for broad labels. Step 05 needs these:
 
 ```bash
 python scripts/04c_celltypist_annotation.py --input $OUT/04c_celltypist.h5ad --output $OUT/04c_celltypist.h5ad \
-  --model $PROJECT/references/celltypist/Immune_All_High.pkl --over-clustering leiden_r0.6 \
+  --model $PROJECT/references/celltypist/data/models/Immune_All_High.pkl --over-clustering leiden_r0.6 \
   --prefix celltypist_high --plot-dir $OUT/celltypist_plots
 ```
 

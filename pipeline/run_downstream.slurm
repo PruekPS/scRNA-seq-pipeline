@@ -55,6 +55,7 @@ if [ ! -f "${PCA_H5AD}" ]; then
 fi
 
 cd "${REPO_ROOT}"
+[[ -f pipeline/activate_env.sh ]] || { echo "ERROR: submit this job from the pipeline folder: cd /path/to/scRNA-seq-pipeline" >&2; exit 1; }
 source pipeline/activate_env.sh "${ENV_NAME}"
 
 CLUSTER_INPUT="${PCA_H5AD}"

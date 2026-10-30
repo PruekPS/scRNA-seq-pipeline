@@ -22,7 +22,7 @@ problem. The log nearly always has the Python or R error spelled out.
 
 | Symptom | What it means | What to do |
 |---|---|---|
-| `this job was submitted from ..., which is not the pipeline folder`, or `python: can't open file '.../scripts/...'` | you ran `sbatch` from the wrong folder | `cd` into the code folder, resubmit (page 11) |
+| `submit this job from the pipeline folder`, or `python: can't open file '.../scripts/...'` | you ran `sbatch` from the wrong folder | `cd` into the code folder, resubmit (page 11) |
 | the job vanishes at once and **there is no log file** | the folder in `--output` does not exist; SLURM will not create it | `mkdir -p $PROJECT/logs`, resubmit |
 | `Invalid account or account/partition combination` or `Invalid qos specification` | `--account` or `--qos` is wrong, or still has the angle brackets | find your values: `sacctmgr show assoc user=$USER format=account,qos` |
 | `QOSGrpCpuLimit` in `squeue` | your group's CPU limit is in use, or the job asks for more than it allows | wait, ask for fewer CPUs (`--cpus-per-task=8`), or use the burst QoS (`<group>-b`) if you have one |

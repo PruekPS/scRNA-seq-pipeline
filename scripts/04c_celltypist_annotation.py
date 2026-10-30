@@ -24,7 +24,7 @@ Models are not downloaded here (no network calls inside analysis steps):
 fetch them once beforehand, e.g.
     CELLTYPIST_FOLDER=/path/to/models python -c \
       "import celltypist; celltypist.models.download_models(model=['Immune_All_Low.pkl','Immune_All_High.pkl'])"
-and pass --model /path/to/models/Immune_All_Low.pkl.
+and pass --model /path/to/models/data/models/Immune_All_Low.pkl (CellTypist adds data/models/).
 
 Usage:
     python 04c_celltypist_annotation.py --input 04b_annotated.h5ad --output 04c_celltypist.h5ad \

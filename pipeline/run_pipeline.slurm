@@ -81,6 +81,7 @@ CELLTYPIST_MODEL2="${CELLTYPIST_MODEL2:-}"
 mkdir -p "${OUT_DIR}"
 
 cd "${REPO_ROOT}"
+[[ -f pipeline/activate_env.sh ]] || { echo "ERROR: submit this job from the pipeline folder: cd /path/to/scRNA-seq-pipeline" >&2; exit 1; }
 source pipeline/activate_env.sh "${ENV_NAME}"
 
 META_ARGS=()

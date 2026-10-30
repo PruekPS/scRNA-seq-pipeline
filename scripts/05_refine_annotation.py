@@ -97,9 +97,13 @@ def subcluster(sub, batch_key, resolution, n_hvg, n_pcs, seed):
     try:
         sc.pp.highly_variable_genes(sub, n_top_genes=n_hvg, flavor="seurat_v3", layer="counts",
                                     batch_key=batch_key)
-    except Exception as e:  # seurat_v3 can fail on tiny batches; fall back to per-dataset HVGs
+    except Exception as e:  # seurat_v3's curve fit can fail on small batches; fall back to dataset-wide HVGs
         print(f"    batch-aware HVG failed ({e}); using dataset-wide HVGs")
-        sc.pp.highly_variable_genes(sub, n_top_genes=n_hvg, flavor="seurat_v3", layer="counts")
+        try:
+            sc.pp.highly_variable_genes(sub, n_top_genes=n_hvg, flavor="seurat_v3", layer="counts")
+        except Exception as e2:  # the same fit can fail on a small lineage, too; 'seurat' uses sub.X (log-normalized)
+            print(f"    dataset-wide seurat_v3 failed too ({e2}); using the 'seurat' method")
+            sc.pp.highly_variable_genes(sub, n_top_genes=n_hvg, flavor="seurat")
     hv = sub[:, sub.var["highly_variable"]].copy()
     sc.pp.scale(hv, max_value=10)
     n_pcs = min(n_pcs, hv.n_obs - 1, hv.n_vars - 1)

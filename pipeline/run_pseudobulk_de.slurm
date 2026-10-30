@@ -62,6 +62,7 @@ PREP_PAIR=(); DE_PAIR=()
 if [ -n "${PAIR_COL}" ]; then PREP_PAIR=(--pair-col "${PAIR_COL}"); DE_PAIR=(--pair-col=pair); fi
 
 cd "${REPO_ROOT}"
+[[ -f pipeline/activate_env.sh ]] || { echo "ERROR: submit this job from the pipeline folder: cd /path/to/scRNA-seq-pipeline" >&2; exit 1; }
 source pipeline/activate_env.sh "${ENV_NAME}"
 
 echo "=== [1/2] Pseudobulk aggregation of ${ANNOTATED_INPUT} (condition-col=${CONDITION_COL}) ==="
